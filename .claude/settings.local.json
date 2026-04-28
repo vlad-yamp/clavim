@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew assembleDebug --no-daemon)",
+      "Bash(./gradlew assembleDebug --no-daemon --stacktrace)",
+      "Bash(./gradlew assembleDebug --no-daemon --info)",
+      "Bash(python3 *)",
+      "Bash(./gradlew --version)",
+      "Read(//c/Program Files/BellSoft/**)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Program Files/Microsoft/**)",
+      "Bash(grep -v \"^$\")"
+    ]
+  }
+}
