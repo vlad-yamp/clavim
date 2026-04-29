@@ -1,15 +1,21 @@
 package com.dodisrael.clavim
 
+import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.provider.ContactsContract
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +26,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -59,7 +66,10 @@ import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Slideshow
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Card
@@ -67,7 +77,13 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -79,6 +95,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -115,9 +132,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 
-enum class Screen { MAIN, SHEETS, INFO, EXCHANGE_RATES, TELEGRAM_FOSTERING }
+enum class Screen { MAIN, SHEETS, INFO, EXCHANGE_RATES, TELEGRAM_FOSTERING, ADVERTISING, WHATSAPP, WHATSAPP_REMINDER }
 
 data class MenuItem(
     val title: String,
@@ -134,6 +152,7 @@ data class RateHistory(
 )
 
 data class FosteringPost(val photoUrl: String, val caption: String)
+data class WhatsAppContact(val name: String, val phone: String)
 
 sealed class FosteringState {
     object Idle : FosteringState()
@@ -173,10 +192,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppContent() {
     var screen by remember { mutableStateOf(Screen.MAIN) }
+    var reminderType by remember { mutableStateOf(1) }
 
     BackHandler(enabled = screen != Screen.MAIN) {
         screen = when (screen) {
             Screen.EXCHANGE_RATES, Screen.TELEGRAM_FOSTERING -> Screen.INFO
+            Screen.WHATSAPP_REMINDER -> Screen.WHATSAPP
             else -> Screen.MAIN
         }
     }
@@ -190,17 +211,33 @@ fun AppContent() {
         )
         Screen.EXCHANGE_RATES      -> ExchangeRatesScreen(onBack = { screen = Screen.INFO })
         Screen.TELEGRAM_FOSTERING  -> TelegramFosteringScreen(onBack = { screen = Screen.INFO })
+        Screen.ADVERTISING         -> AdvertisingMenuScreen(onBack = { screen = Screen.MAIN })
+        Screen.WHATSAPP            -> WhatsAppMenuScreen(
+            onBack = { screen = Screen.MAIN },
+            onReminderClick = { type -> reminderType = type; screen = Screen.WHATSAPP_REMINDER }
+        )
+        Screen.WHATSAPP_REMINDER   -> WhatsAppReminderScreen(
+            reminderType = reminderType,
+            onBack = { screen = Screen.WHATSAPP }
+        )
         Screen.MAIN                -> MainMenuScreen(
-            onSheetsClick = { screen = Screen.SHEETS },
-            onInfoClick   = { screen = Screen.INFO }
+            onSheetsClick      = { screen = Screen.SHEETS },
+            onInfoClick        = { screen = Screen.INFO },
+            onAdvertisingClick = { screen = Screen.ADVERTISING },
+            onWhatsAppClick    = { screen = Screen.WHATSAPP }
         )
     }
 }
 
 @Composable
-fun MainMenuScreen(onSheetsClick: () -> Unit, onInfoClick: () -> Unit) {
+fun MainMenuScreen(
+    onSheetsClick: () -> Unit,
+    onInfoClick: () -> Unit,
+    onAdvertisingClick: () -> Unit,
+    onWhatsAppClick: () -> Unit
+) {
     val context = LocalContext.current
-    val items = remember { buildMainMenuItems(onSheetsClick, onInfoClick) }
+    val items = remember { buildMainMenuItems(onSheetsClick, onInfoClick, onAdvertisingClick, onWhatsAppClick) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
@@ -604,7 +641,12 @@ fun MenuCard(item: MenuItem, onClick: () -> Unit) {
     }
 }
 
-private fun buildMainMenuItems(onSheetsClick: () -> Unit, onInfoClick: () -> Unit): List<MenuItem> = listOf(
+private fun buildMainMenuItems(
+    onSheetsClick: () -> Unit,
+    onInfoClick: () -> Unit,
+    onAdvertisingClick: () -> Unit,
+    onWhatsAppClick: () -> Unit
+): List<MenuItem> = listOf(
     MenuItem("Наш сайт", Icons.Default.Language, Color(0xFF1565C0)) { ctx ->
         ctx.openUrl("https://dogisrael.com")
     },
@@ -612,14 +654,8 @@ private fun buildMainMenuItems(onSheetsClick: () -> Unit, onInfoClick: () -> Uni
         val query = Uri.encode("Дрессировка собак Хайфа")
         ctx.openUrl("https://www.google.com/search?q=$query")
     },
-    MenuItem("Google Реклама", Icons.Default.Campaign, Color(0xFF4285F4)) { ctx ->
-        val launched = ctx.tryLaunchApp("com.google.android.apps.adwords")
-        if (!launched) ctx.openUrl("https://ads.google.com")
-    },
-    MenuItem("Meta Ads", Icons.Default.Insights, Color(0xFF1877F2)) { ctx ->
-        val launched = ctx.tryLaunchApp("com.facebook.adsmanager")
-        if (!launched) ctx.openUrl("https://www.facebook.com/adsmanager")
-    },
+    MenuItem("Реклама", Icons.Default.Campaign, Color(0xFF4285F4)) { _ -> onAdvertisingClick() },
+    MenuItem("WhatsApp", Icons.Default.Chat, Color(0xFF25D366)) { _ -> onWhatsAppClick() },
     MenuItem("Тильда", Icons.Default.BarChart, Color(0xFF7B1FA2)) { ctx ->
         ctx.openUrl("https://stats.tilda.cc/projects/statistics/?projectid=7284816&from=sitesettings")
     },
@@ -932,6 +968,394 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
         }
     }
 }
+
+// ──────────────────────── Advertising ────────────────────────
+
+@Composable
+fun AdvertisingMenuScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val items = remember { buildAdvertisingMenuItems() }
+    Column(modifier = Modifier.fillMaxSize()) {
+        AppHeader(title = "Реклама", subtitle = "Google Ads и Meta Ads", showBack = true, onBack = onBack)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars),
+            contentPadding = PaddingValues(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(items) { item -> MenuCard(item = item, onClick = { item.onClick(context) }) }
+        }
+    }
+}
+
+private fun buildAdvertisingMenuItems(): List<MenuItem> = listOf(
+    MenuItem("Google\nРеклама", Icons.Default.Campaign, Color(0xFF4285F4)) { ctx ->
+        val launched = ctx.tryLaunchApp("com.google.android.apps.adwords")
+        if (!launched) ctx.openUrl("https://ads.google.com")
+    },
+    MenuItem("Meta Ads", Icons.Default.Insights, Color(0xFF1877F2)) { ctx ->
+        val launched = ctx.tryLaunchApp("com.facebook.adsmanager")
+        if (!launched) ctx.openUrl("https://www.facebook.com/adsmanager")
+    }
+)
+
+// ──────────────────────── WhatsApp ────────────────────────
+
+@Composable
+fun WhatsAppMenuScreen(onBack: () -> Unit, onReminderClick: (Int) -> Unit) {
+    val context = LocalContext.current
+    val items = remember { buildWhatsAppMenuItems(onReminderClick) }
+    Column(modifier = Modifier.fillMaxSize()) {
+        AppHeader(title = "WhatsApp", subtitle = "Шаблоны сообщений", showBack = true, onBack = onBack)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars),
+            contentPadding = PaddingValues(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(items) { item -> MenuCard(item = item, onClick = { item.onClick(context) }) }
+        }
+    }
+}
+
+private fun buildWhatsAppMenuItems(onReminderClick: (Int) -> Unit): List<MenuItem> = listOf(
+    MenuItem("Напоминание\nо передержке 1", Icons.Default.Notifications, Color(0xFF25D366)) { _ ->
+        onReminderClick(1)
+    },
+    MenuItem("Напоминание\nо передержке 2", Icons.Default.Notifications, Color(0xFF128C7E)) { _ ->
+        onReminderClick(2)
+    }
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WhatsAppReminderScreen(reminderType: Int, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var showDatePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDateRangePickerState()
+    var startMillis by remember { mutableStateOf<Long?>(null) }
+    var endMillis   by remember { mutableStateOf<Long?>(null) }
+
+    val whatsappOptions = remember {
+        buildList {
+            if (isAppInstalled(context, "com.whatsapp"))     add("com.whatsapp"     to "WhatsApp (Израиль)")
+            if (isAppInstalled(context, "com.whatsapp.w4b")) add("com.whatsapp.w4b" to "WhatsApp Business (Россия)")
+        }.ifEmpty { listOf("com.whatsapp" to "WhatsApp (Израиль)") }
+    }
+    var selectedApp by remember { mutableStateOf(whatsappOptions.first().first) }
+
+    var contacts       by remember { mutableStateOf<List<WhatsAppContact>>(emptyList()) }
+    var contactSearch  by remember { mutableStateOf("") }
+    var selectedContact by remember { mutableStateOf<WhatsAppContact?>(null) }
+
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) scope.launch { contacts = readContacts(context) }
+    }
+    LaunchedEffect(Unit) {
+        if (context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+            contacts = readContacts(context)
+        } else {
+            permLauncher.launch(Manifest.permission.READ_CONTACTS)
+        }
+    }
+
+    val filteredContacts = remember(contactSearch, contacts) {
+        if (contactSearch.isBlank()) emptyList()
+        else contacts.filter { it.name.contains(contactSearch.trim(), ignoreCase = true) }.take(15)
+    }
+
+    val startStr = startMillis?.let { formatDate(it) } ?: ""
+    val endStr   = endMillis?.let   { formatDate(it) } ?: ""
+    val message  = when (reminderType) {
+        1 -> "Здравствуйте. Вы записаны на передержку с $startStr по $endStr. Если что-то изменится, сообщите, пожалуйста."
+        else -> "Здравствуйте. Вы записаны на передержку с $startStr по $endStr. Во сколько вас ждать $startStr?"
+    }
+    val canSend = startMillis != null && endMillis != null && selectedContact != null
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        startMillis = datePickerState.selectedStartDateMillis
+                        endMillis   = datePickerState.selectedEndDateMillis
+                        showDatePicker = false
+                    },
+                    enabled = datePickerState.selectedStartDateMillis != null &&
+                              datePickerState.selectedEndDateMillis   != null
+                ) { Text("ОК") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Отмена") } }
+        ) {
+            DateRangePicker(
+                state = datePickerState,
+                modifier = Modifier.heightIn(max = 500.dp),
+                headline = {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 24.dp, end = 12.dp, bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Дата с",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                datePickerState.selectedStartDateMillis?.let { formatDate(it) } ?: "—",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Text(
+                            "–",
+                            fontSize = 20.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Дата по",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                datePickerState.selectedEndDateMillis?.let { formatDate(it) } ?: "—",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        AppHeader(
+            title = "Напоминание $reminderType",
+            subtitle = "Сообщение для WhatsApp",
+            showBack = true,
+            onBack = onBack
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Dates
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Период передержки", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF757575))
+                    if (startMillis != null && endMillis != null) {
+                        Text("с $startStr по $endStr", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                    }
+                    Button(
+                        onClick = { showDatePicker = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B7D3A))
+                    ) {
+                        Icon(Icons.Default.DateRange, contentDescription = null, tint = Color.White)
+                        Spacer(Modifier.size(8.dp))
+                        Text(if (startMillis == null) "Выбрать даты" else "Изменить даты", color = Color.White)
+                    }
+                }
+            }
+
+            // WhatsApp account (only if more than one available)
+            if (whatsappOptions.size > 1) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Аккаунт WhatsApp", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF757575))
+                        Spacer(Modifier.height(4.dp))
+                        whatsappOptions.forEach { (pkg, label) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedApp = pkg }
+                                    .padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(selected = selectedApp == pkg, onClick = { selectedApp = pkg })
+                                Text(label, modifier = Modifier.padding(start = 4.dp), fontSize = 15.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Contact picker
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Получатель", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF757575))
+                    if (selectedContact != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(selectedContact!!.name, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                                Text(selectedContact!!.phone, fontSize = 13.sp, color = Color(0xFF757575))
+                            }
+                            IconButton(onClick = { selectedContact = null; contactSearch = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Сбросить")
+                            }
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = contactSearch,
+                            onValueChange = { contactSearch = it },
+                            placeholder = { Text("Поиск по имени") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            trailingIcon = {
+                                if (contactSearch.isNotEmpty()) {
+                                    IconButton(onClick = { contactSearch = "" }) {
+                                        Icon(Icons.Default.Clear, contentDescription = "Очистить")
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        when {
+                            contacts.isEmpty() ->
+                                Text("Нет доступа к контактам", fontSize = 13.sp, color = Color(0xFF9E9E9E))
+                            contactSearch.isNotBlank() && filteredContacts.isEmpty() ->
+                                Text("Контакты не найдены", fontSize = 13.sp, color = Color(0xFF9E9E9E))
+                            filteredContacts.isNotEmpty() -> Column {
+                                filteredContacts.forEach { contact ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { selectedContact = contact; contactSearch = "" }
+                                            .padding(vertical = 8.dp, horizontal = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.size(36.dp).clip(CircleShape).background(Color(0xFF1B7D3A)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                contact.name.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Column {
+                                            Text(contact.name, fontSize = 15.sp)
+                                            Text(contact.phone, fontSize = 12.sp, color = Color(0xFF9E9E9E))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Message preview
+            if (startMillis != null && endMillis != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+                    elevation = CardDefaults.cardElevation(0.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Текст сообщения", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF2E7D32))
+                        Spacer(Modifier.height(8.dp))
+                        Text(message, fontSize = 14.sp, color = Color(0xFF1C1B1F))
+                    }
+                }
+            }
+
+            // Send button
+            Button(
+                onClick = {
+                    val contact = selectedContact ?: return@Button
+                    val phone = contact.phone.replace("+", "").replace(Regex("\\D"), "")
+                    val encoded = Uri.encode(message)
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$phone?text=$encoded"))
+                    intent.setPackage(selectedApp)
+                    try {
+                        context.startActivity(intent)
+                    } catch (_: ActivityNotFoundException) {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$phone?text=$encoded")))
+                    }
+                },
+                enabled = canSend,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366))
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White)
+                Spacer(Modifier.size(8.dp))
+                Text("Перейти в WhatsApp", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            }
+
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+private fun isAppInstalled(context: Context, packageName: String): Boolean =
+    try { context.packageManager.getPackageInfo(packageName, 0); true }
+    catch (_: PackageManager.NameNotFoundException) { false }
+
+private fun formatDate(millis: Long): String =
+    SimpleDateFormat("d MMMM", Locale("ru")).format(Date(millis))
+
+private suspend fun readContacts(context: Context): List<WhatsAppContact> =
+    withContext(Dispatchers.IO) {
+        val list = mutableListOf<WhatsAppContact>()
+        val cursor = context.contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER
+            ),
+            null, null,
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
+        ) ?: return@withContext list
+        cursor.use {
+            val nameCol  = it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+            val phoneCol = it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            while (it.moveToNext()) {
+                val name  = it.getString(nameCol)?.takeIf { n -> n.isNotBlank() } ?: continue
+                val phone = it.getString(phoneCol)?.replace(Regex("[^+\\d]"), "") ?: continue
+                if (phone.length >= 7) list.add(WhatsAppContact(name, phone))
+            }
+        }
+        list.distinctBy { it.phone }.sortedBy { it.name }
+    }
+
+// ──────────────────────── Telegram fostering ────────────────────────
 
 private suspend fun fetchFosteringPhotos(
     query: String,
