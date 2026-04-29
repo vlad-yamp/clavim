@@ -9,7 +9,8 @@
       "Read(//c/Program Files/BellSoft/**)",
       "Read(//c/Program Files/**)",
       "Read(//c/Program Files/Microsoft/**)",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(./gradlew assembleDebug)"
     ]
   }
 }

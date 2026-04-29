@@ -59,21 +59,34 @@ import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Slideshow
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,9 +95,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.dodisrael.clavim.ui.theme.ClavimTheme
 import com.dodisrael.clavim.ui.theme.HeaderEnd
 import com.dodisrael.clavim.ui.theme.HeaderStart
@@ -92,6 +109,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
@@ -99,7 +117,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-enum class Screen { MAIN, SHEETS, INFO, EXCHANGE_RATES }
+enum class Screen { MAIN, SHEETS, INFO, EXCHANGE_RATES, TELEGRAM_FOSTERING }
 
 data class MenuItem(
     val title: String,
@@ -114,6 +132,15 @@ data class RateHistory(
     val usdIls: List<Double>,
     val ilsRub: List<Double>
 )
+
+data class FosteringPost(val photoUrl: String, val caption: String)
+
+sealed class FosteringState {
+    object Idle : FosteringState()
+    object Loading : FosteringState()
+    data class Success(val posts: List<FosteringPost>) : FosteringState()
+    data class Error(val message: String) : FosteringState()
+}
 
 sealed class RatesState {
     object Loading : RatesState()
@@ -149,19 +176,21 @@ fun AppContent() {
 
     BackHandler(enabled = screen != Screen.MAIN) {
         screen = when (screen) {
-            Screen.EXCHANGE_RATES -> Screen.INFO
+            Screen.EXCHANGE_RATES, Screen.TELEGRAM_FOSTERING -> Screen.INFO
             else -> Screen.MAIN
         }
     }
 
     when (screen) {
-        Screen.SHEETS         -> SheetsMenuScreen(onBack = { screen = Screen.MAIN })
-        Screen.INFO           -> InfoMenuScreen(
+        Screen.SHEETS              -> SheetsMenuScreen(onBack = { screen = Screen.MAIN })
+        Screen.INFO                -> InfoMenuScreen(
             onBack = { screen = Screen.MAIN },
-            onExchangeRatesClick = { screen = Screen.EXCHANGE_RATES }
+            onExchangeRatesClick = { screen = Screen.EXCHANGE_RATES },
+            onTelegramFosteringClick = { screen = Screen.TELEGRAM_FOSTERING }
         )
-        Screen.EXCHANGE_RATES -> ExchangeRatesScreen(onBack = { screen = Screen.INFO })
-        Screen.MAIN           -> MainMenuScreen(
+        Screen.EXCHANGE_RATES      -> ExchangeRatesScreen(onBack = { screen = Screen.INFO })
+        Screen.TELEGRAM_FOSTERING  -> TelegramFosteringScreen(onBack = { screen = Screen.INFO })
+        Screen.MAIN                -> MainMenuScreen(
             onSheetsClick = { screen = Screen.SHEETS },
             onInfoClick   = { screen = Screen.INFO }
         )
@@ -216,9 +245,9 @@ fun SheetsMenuScreen(onBack: () -> Unit) {
 }
 
 @Composable
-fun InfoMenuScreen(onBack: () -> Unit, onExchangeRatesClick: () -> Unit) {
+fun InfoMenuScreen(onBack: () -> Unit, onExchangeRatesClick: () -> Unit, onTelegramFosteringClick: () -> Unit) {
     val context = LocalContext.current
-    val items = remember { buildInfoMenuItems(onExchangeRatesClick) }
+    val items = remember { buildInfoMenuItems(onExchangeRatesClick, onTelegramFosteringClick) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
@@ -621,7 +650,7 @@ private fun buildSheetsMenuItems(): List<MenuItem> = listOf(
     }
 )
 
-private fun buildInfoMenuItems(onExchangeRatesClick: () -> Unit): List<MenuItem> = listOf(
+private fun buildInfoMenuItems(onExchangeRatesClick: () -> Unit, onTelegramFosteringClick: () -> Unit): List<MenuItem> = listOf(
     MenuItem("Услуги\nи цены", Icons.Default.Assignment, Color(0xFF6A1B9A)) { ctx ->
         ctx.openUrl("https://docs.google.com/spreadsheets/d/e/2PACX-1vQ9o9cy7RF1_AAEQRLuFWbp_5nLXl_q5WXYansWUuO7G-kGidbcb8_flK3-kRCQQvqiJCEnrJWHLr1h/pubhtml?widget=true&headers=false#gid=0?&single=true")
     },
@@ -639,6 +668,9 @@ private fun buildInfoMenuItems(onExchangeRatesClick: () -> Unit): List<MenuItem>
     },
     MenuItem("Отзывы\nклиентов", Icons.Default.RateReview, Color(0xFFF57F17)) { ctx ->
         ctx.openUrl("https://www.google.com/search?newwindow=1&authuser=1&sxsrf=AHTn8zrbLwwF9wGEA5poSjJh8dL3L95WuQ:1744786758568&si=APYL9bs7Hg2KMLB-4tSoTdxuOx8BdRvHbByC_AuVpNyh0x2KzYKIj8l0ArlFedGpiIPiM2wpnktdq0_hR9JLB-xTz_vgQx7xk0mKoPgtE06bMRpG7JD0lxcEoXkR3fen8REzMIFCmpEzDu54OtHTV8GPWqqaQHMkFU9d06MYqRw3YY4eaCF3KxPYVzEvPNfnq0w1VvKbXb_1u4Bk0XhB8vBd-Va6Bt1KeJHAQTSeyDJipBeX-_DFsngm5CyL3Mfe2HROqSZCYOoZqoYOkDjqPYn37_9-yaswD5fRjNQyV-Q2S-q4xEG-U-htIFfSBPrbZAw5kUt7AqHk&q=DogIsrael+-+%D0%B4%D1%80%D0%B5%D1%81%D1%81%D0%B8%D1%80%D0%BE%D0%B2%D0%BA%D0%B0+%D0%B8+%D0%BF%D0%B5%D1%80%D0%B5%D0%B4%D0%B5%D1%80%D0%B6%D0%BA%D0%B0+%28%D0%B4%D0%BE%D0%BC%D0%B0%D1%88%D0%BD%D0%B8%D0%B9+%D0%BF%D0%B0%D0%BD%D1%81%D0%B8%D0%BE%D0%BD%29+%D0%B4%D0%BB%D1%8F+%D1%81%D0%BE%D0%B1%D0%B0%D0%BA.+%D0%A5%D0%B0%D0%B9%D1%84%D0%B0,+%D0%9A%D1%80%D0%B0%D0%B9%D0%BE%D1%82,+%D0%A1%D0%B5%D0%B2%D0%B5%D1%80+Reviews")
+    },
+    MenuItem("Фото из\nTelegram", Icons.Default.Slideshow, Color(0xFF039BE5)) { _ ->
+        onTelegramFosteringClick()
     },
     MenuItem("Курсы\nвалют", Icons.Default.CurrencyExchange, Color(0xFF00695C)) { _ ->
         onExchangeRatesClick()
@@ -733,6 +765,252 @@ fun CuteDog(modifier: Modifier = Modifier) {
         drawLine(color = tongue.copy(alpha = 0.55f), start = Offset(cx, cy + r * 0.38f),
             end = Offset(cx, cy + r * 0.59f), strokeWidth = r * 0.032f, cap = StrokeCap.Round)
     }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun TelegramFosteringScreen(onBack: () -> Unit) {
+    var query by remember { mutableStateOf("") }
+    var state by remember { mutableStateOf<FosteringState>(FosteringState.Idle) }
+    var loadingPage by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
+
+    val doSearch: () -> Unit = {
+        if (query.isNotBlank()) {
+            state = FosteringState.Loading
+            loadingPage = 0
+            scope.launch {
+                state = fetchFosteringPhotos(query.trim()) { page -> loadingPage = page }
+            }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        AppHeader(
+            title = "Фото передержек",
+            subtitle = "Из Telegram-канала DogIsrael",
+            showBack = true,
+            onBack = onBack
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.navigationBars)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("Имя собаки") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { doSearch() }),
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Очистить")
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                Button(
+                    onClick = doSearch,
+                    enabled = query.isNotBlank() && state !is FosteringState.Loading,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF039BE5))
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = "Найти", tint = Color.White)
+                }
+            }
+
+            when (val s = state) {
+                is FosteringState.Idle -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Введите имя собаки и нажмите 🔍",
+                        color = Color(0xFF9E9E9E),
+                        fontSize = 15.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(32.dp)
+                    )
+                }
+                is FosteringState.Loading -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            "Поиск... страница $loadingPage из 50",
+                            color = Color(0xFF757575),
+                            fontSize = 15.sp
+                        )
+                    }
+                }
+                is FosteringState.Error -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = s.message,
+                        color = Color(0xFFB00020),
+                        textAlign = TextAlign.Center,
+                        fontSize = 15.sp,
+                        modifier = Modifier.padding(24.dp)
+                    )
+                }
+                is FosteringState.Success -> key(s.posts) {
+                    val pagerState = rememberPagerState { s.posts.size }
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Text(
+                            text = "${pagerState.currentPage + 1} / ${s.posts.size}",
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .padding(vertical = 4.dp),
+                            fontSize = 13.sp,
+                            color = Color(0xFF9E9E9E)
+                        )
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxSize()
+                        ) { page ->
+                            val post = s.posts[page]
+                            val ctx = LocalContext.current
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(ctx)
+                                        .data(post.photoUrl)
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = "Фото передержки",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    contentScale = ContentScale.Fit
+                                )
+                                if (post.caption.isNotBlank()) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                                        elevation = CardDefaults.cardElevation(2.dp)
+                                    ) {
+                                        Text(
+                                            text = post.caption,
+                                            modifier = Modifier.padding(12.dp),
+                                            fontSize = 13.sp,
+                                            color = Color(0xFF1C1B1F),
+                                            maxLines = 5,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(4.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private suspend fun fetchFosteringPhotos(
+    query: String,
+    onProgress: (Int) -> Unit
+): FosteringState {
+    return withContext(Dispatchers.IO) {
+        try {
+            val allPosts = mutableListOf<FosteringPost>()
+            val seen = mutableSetOf<String>()
+            // Target only actual photo elements: class="tgme_widget_message_photo..."
+            // This excludes avatar elements (class="tgme_widget_message_user_photo")
+            // because "user_photo" ≠ "photo" at position 20 of the class name
+            val photoRegex = Regex(
+                """tgme_widget_message_photo(?!_user)[^"]*"[^>]*background-image:url\('([^']+)'\)"""
+            )
+            val textRegex = Regex("""js-message_text[^>]*>(.*?)</div>""", RegexOption.DOT_MATCHES_ALL)
+            val htmlTagRegex = Regex("<[^>]+>")
+            val msgIdRegex = Regex("""data-post="[^/]*/(\d+)"""")
+
+            var beforeId: String? = null
+            var fetchedAnyPage = false
+
+            for (page in 0 until 50) {
+                onProgress(page + 1)
+                val urlStr = "https://t.me/s/DogIsraelTsafon" +
+                    (beforeId?.let { "?before=$it" } ?: "")
+                val html = fetchHtml(urlStr) ?: break
+                fetchedAnyPage = true
+
+                val newBefore = msgIdRegex.findAll(html)
+                    .mapNotNull { it.groupValues[1].toLongOrNull() }
+                    .minOrNull()?.toString()
+
+                html.split("js-widget_message_wrap").drop(1).forEach { block ->
+                    val photoUrls = photoRegex.findAll(block).map { it.groupValues[1] }.toList()
+                    if (photoUrls.isEmpty()) return@forEach
+
+                    val rawText = textRegex.find(block)?.groupValues?.get(1) ?: ""
+                    val text = rawText
+                        .replace(htmlTagRegex, " ")
+                        .replace("&amp;", "&").replace("&lt;", "<")
+                        .replace("&gt;", ">").replace("&nbsp;", " ").replace("&#39;", "'")
+                        .replace(Regex("\\s+"), " ").trim()
+
+                    if (text.contains(query, ignoreCase = true)) {
+                        photoUrls.forEach { url ->
+                            if (seen.add(url)) allPosts.add(FosteringPost(url, text))
+                        }
+                    }
+                }
+
+                if (newBefore == null || newBefore == beforeId) break
+                beforeId = newBefore
+            }
+
+            when {
+                !fetchedAnyPage -> FosteringState.Error("Нет соединения с интернетом")
+                allPosts.isEmpty() -> FosteringState.Error("Фото с именем «$query» не найдены")
+                else -> FosteringState.Success(allPosts)
+            }
+        } catch (e: Exception) {
+            FosteringState.Error("Ошибка: ${e.message ?: "Нет соединения"}")
+        }
+    }
+}
+
+private fun fetchHtml(url: String): String? {
+    return try {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.connectTimeout = 10_000
+        conn.readTimeout = 10_000
+        conn.instanceFollowRedirects = true
+        conn.setRequestProperty(
+            "User-Agent",
+            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/121.0.0.0 Mobile Safari/537.36"
+        )
+        if (conn.responseCode != HttpURLConnection.HTTP_OK) return null
+        conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+    } catch (_: Exception) { null }
 }
 
 private fun Context.openInSheets(url: String) {
