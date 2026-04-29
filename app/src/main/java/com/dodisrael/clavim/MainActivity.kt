@@ -70,6 +70,8 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Slideshow
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Card
@@ -82,6 +84,10 @@ import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.Icon
@@ -115,6 +121,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -171,6 +178,62 @@ sealed class RatesState {
     ) : RatesState()
     data class Error(val message: String) : RatesState()
 }
+
+private val INSTRUCTIONS_TEXT = """
+*Что нужно знать о первом занятии*
+
+✅ 1. Возьмите с собой воду и миску
+Собаке обязательно нужно пить. Лучше, если у неё будет своя привычная миска.
+
+✅ 2. Не кормите собаку перед тренировкой
+Особенно если занятие вечером — покормите только утром. На сытый желудок тренироваться сложно и не очень эффективно.
+
+✅ 3. Поводок и ошейник (или шлейка)
+Никаких рулеток! Только надёжный поводок, чтобы можно было спокойно контролировать собаку.
+
+✅ 4. Лакомства
+Возьмите много мелких, вкусных и любимых лакомств, что-нибудь, что собака очень любит. Это главный инструмент на занятии!
+🐄 Вы можете у нас приобрести сушёное говяжье лёгкое собственного изготовления — 20₪
+______
+🐾 Если у вас есть вопросы — пишите или звоните
+
++972506072764
+
+Наш сайт: https://dogisrael.com
+
+Ссылка на наш телеграмм-канал
+(там много всего интересного) https://t.me/DogIsraelTsafon
+
+Ссылка на facebook https://www.facebook.com/share/168tHrFZXN/
+______
+*Как к нам добраться*
+
+*Место занятий*: Кирьят Хаим, ул. Лейб Яфе, д.2 в парке, где находится Театрон аЦафон
+
+Ссылка для навигатора Wase https://waze.com/ul/hsvbfwnu8h
+
+Ссылка на картах Google https://maps.app.goo.gl/uGYhTN5zVTGYWLkY8
+
+*Место передержки*: Кирьят Хаим, ул. Хома у Мигдаль, д.59 б
+
+Ссылка для навигатора Wase https://waze.com/ul/hsvbfwpncv
+
+Ссылка на картах Google https://maps.app.goo.gl/w9vAb3g75SHiSseq9
+______
+➡️ Цены на дрессировку и передержку
+
+✅🐕Дрессировка
+Первое  занятие - 50₪❤️
+Занятие в группе - 100₪
+Индивидуальное занятие - 150₪
+Выезд по вашему адресу - плюс 100₪
+     первое занятие - 150₪
+     последующие - 250₪
+Для тех, кто хочет заниматься, не выходя из дома, имеется удаленный формат занятий - 100₪
+
+🏠🐶Передержка (домашний пансион)
+Домашний пансион на время Вашего отпуска - 120₪ в день
+Домашний пансион с ежедневными занятиями с собакой - 180₪ в день.""".trimIndent()
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1026,6 +1089,12 @@ private fun buildWhatsAppMenuItems(onReminderClick: (Int) -> Unit): List<MenuIte
     },
     MenuItem("Напоминание\nо передержке 2", Icons.Default.Notifications, Color(0xFF128C7E)) { _ ->
         onReminderClick(2)
+    },
+    MenuItem("Напоминание о\nпервом занятии", Icons.Default.School, Color(0xFF6A1B9A)) { _ ->
+        onReminderClick(3)
+    },
+    MenuItem("Инструкции\nдля занятия", Icons.Default.Description, Color(0xFFE65100)) { _ ->
+        onReminderClick(4)
     }
 )
 
@@ -1035,10 +1104,19 @@ fun WhatsAppReminderScreen(reminderType: Int, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDateRangePickerState()
+    // Types 1, 2: date range
+    var showDateRangePicker by remember { mutableStateOf(false) }
+    val dateRangePickerState = rememberDateRangePickerState()
     var startMillis by remember { mutableStateOf<Long?>(null) }
     var endMillis   by remember { mutableStateOf<Long?>(null) }
+
+    // Type 3: single date + time
+    var showSingleDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker       by remember { mutableStateOf(false) }
+    val singleDateState      = rememberDatePickerState()
+    val timePickerState      = rememberTimePickerState(initialHour = 10, initialMinute = 0)
+    var lessonDateMillis     by remember { mutableStateOf<Long?>(null) }
+    var lessonTimeSet        by remember { mutableStateOf(false) }
 
     val whatsappOptions = remember {
         buildList {
@@ -1048,8 +1126,8 @@ fun WhatsAppReminderScreen(reminderType: Int, onBack: () -> Unit) {
     }
     var selectedApp by remember { mutableStateOf(whatsappOptions.first().first) }
 
-    var contacts       by remember { mutableStateOf<List<WhatsAppContact>>(emptyList()) }
-    var contactSearch  by remember { mutableStateOf("") }
+    var contacts        by remember { mutableStateOf<List<WhatsAppContact>>(emptyList()) }
+    var contactSearch   by remember { mutableStateOf("") }
     var selectedContact by remember { mutableStateOf<WhatsAppContact?>(null) }
 
     val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -1068,32 +1146,47 @@ fun WhatsAppReminderScreen(reminderType: Int, onBack: () -> Unit) {
         else contacts.filter { it.name.contains(contactSearch.trim(), ignoreCase = true) }.take(15)
     }
 
-    val startStr = startMillis?.let { formatDate(it) } ?: ""
-    val endStr   = endMillis?.let   { formatDate(it) } ?: ""
-    val message  = when (reminderType) {
-        1 -> "Здравствуйте. Вы записаны на передержку с $startStr по $endStr. Если что-то изменится, сообщите, пожалуйста."
-        else -> "Здравствуйте. Вы записаны на передержку с $startStr по $endStr. Во сколько вас ждать $startStr?"
-    }
-    val canSend = startMillis != null && endMillis != null && selectedContact != null
+    val startStr      = startMillis?.let { formatDate(it) } ?: ""
+    val endStr        = endMillis?.let   { formatDate(it) } ?: ""
+    val lessonDateStr = lessonDateMillis?.let { formatDate(it) } ?: ""
+    val lessonTimeStr = if (lessonTimeSet) formatTime(timePickerState.hour, timePickerState.minute) else ""
 
-    if (showDatePicker) {
+    val message = when (reminderType) {
+        1    -> "Здравствуйте. Вы записаны на передержку с $startStr по $endStr. Если что-то изменится, сообщите, пожалуйста."
+        2    -> "Добрый вечер. Вы записаны на передержку с $startStr по $endStr. Во сколько вас ждать $startStr?"
+        3    -> "Здравствуйте. Это Ольга, кинолог. Вы записаны на пробное занятие с собакой на $lessonDateStr в $lessonTimeStr. Продолжительность занятия 1 час, стоимость 50 шек. Ниже инструкция по подготовке к занятию. До встречи."
+        else -> INSTRUCTIONS_TEXT
+    }
+    val canSend = when (reminderType) {
+        1, 2 -> startMillis != null && endMillis != null && selectedContact != null
+        3    -> lessonDateMillis != null && lessonTimeSet && selectedContact != null
+        else -> selectedContact != null
+    }
+    val showMessagePreview = when (reminderType) {
+        1, 2 -> startMillis != null && endMillis != null
+        3    -> lessonDateMillis != null && lessonTimeSet
+        else -> true
+    }
+
+    // Date range dialog (types 1, 2)
+    if (showDateRangePicker) {
         DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
+            onDismissRequest = { showDateRangePicker = false },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        startMillis = datePickerState.selectedStartDateMillis
-                        endMillis   = datePickerState.selectedEndDateMillis
-                        showDatePicker = false
+                        startMillis = dateRangePickerState.selectedStartDateMillis
+                        endMillis   = dateRangePickerState.selectedEndDateMillis
+                        showDateRangePicker = false
                     },
-                    enabled = datePickerState.selectedStartDateMillis != null &&
-                              datePickerState.selectedEndDateMillis   != null
+                    enabled = dateRangePickerState.selectedStartDateMillis != null &&
+                              dateRangePickerState.selectedEndDateMillis   != null
                 ) { Text("ОК") }
             },
-            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Отмена") } }
+            dismissButton = { TextButton(onClick = { showDateRangePicker = false }) { Text("Отмена") } }
         ) {
             DateRangePicker(
-                state = datePickerState,
+                state = dateRangePickerState,
                 modifier = Modifier.heightIn(max = 500.dp),
                 headline = {
                     Row(
@@ -1104,33 +1197,19 @@ fun WhatsAppReminderScreen(reminderType: Int, onBack: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
+                            Text("Дата с", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(
-                                "Дата с",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                datePickerState.selectedStartDateMillis?.let { formatDate(it) } ?: "—",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.SemiBold
+                                dateRangePickerState.selectedStartDateMillis?.let { formatDate(it) } ?: "—",
+                                fontSize = 20.sp, fontWeight = FontWeight.SemiBold
                             )
                         }
-                        Text(
-                            "–",
-                            fontSize = 20.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        )
+                        Text("–", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 4.dp))
                         Column(modifier = Modifier.weight(1f)) {
+                            Text("Дата по", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(
-                                "Дата по",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                datePickerState.selectedEndDateMillis?.let { formatDate(it) } ?: "—",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.SemiBold
+                                dateRangePickerState.selectedEndDateMillis?.let { formatDate(it) } ?: "—",
+                                fontSize = 20.sp, fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
@@ -1139,10 +1218,58 @@ fun WhatsAppReminderScreen(reminderType: Int, onBack: () -> Unit) {
         }
     }
 
+    // Single date dialog (type 3)
+    if (showSingleDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showSingleDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = { lessonDateMillis = singleDateState.selectedDateMillis; showSingleDatePicker = false },
+                    enabled = singleDateState.selectedDateMillis != null
+                ) { Text("ОК") }
+            },
+            dismissButton = { TextButton(onClick = { showSingleDatePicker = false }) { Text("Отмена") } }
+        ) {
+            DatePicker(state = singleDateState)
+        }
+    }
+
+    // Time picker dialog (type 3)
+    if (showTimePicker) {
+        Dialog(onDismissRequest = { showTimePicker = false }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Время занятия", fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
+                        modifier = Modifier.padding(bottom = 16.dp))
+                    TimePicker(state = timePickerState)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { showTimePicker = false }) { Text("Отмена") }
+                        TextButton(onClick = { lessonTimeSet = true; showTimePicker = false }) { Text("ОК") }
+                    }
+                }
+            }
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
-            title = "Напоминание $reminderType",
-            subtitle = "Сообщение для WhatsApp",
+            title = when (reminderType) {
+                3    -> "Первое занятие"
+                4    -> "Инструкции"
+                else -> "Напоминание $reminderType"
+            },
+            subtitle = when (reminderType) {
+                3    -> "Напоминание для клиента"
+                4    -> "Подготовка к занятию"
+                else -> "Сообщение для WhatsApp"
+            },
             showBack = true,
             onBack = onBack
         )
@@ -1154,27 +1281,68 @@ fun WhatsAppReminderScreen(reminderType: Int, onBack: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Dates
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(2.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Период передержки", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF757575))
-                    if (startMillis != null && endMillis != null) {
-                        Text("с $startStr по $endStr", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                    }
-                    Button(
-                        onClick = { showDatePicker = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B7D3A))
-                    ) {
-                        Icon(Icons.Default.DateRange, contentDescription = null, tint = Color.White)
-                        Spacer(Modifier.size(8.dp))
-                        Text(if (startMillis == null) "Выбрать даты" else "Изменить даты", color = Color.White)
+            // Date / time section — shown only for types 1, 2, 3
+            when (reminderType) {
+                1, 2 -> Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Период передержки", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF757575))
+                        if (startMillis != null && endMillis != null) {
+                            Text("с $startStr по $endStr", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Button(
+                            onClick = { showDateRangePicker = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B7D3A))
+                        ) {
+                            Icon(Icons.Default.DateRange, contentDescription = null, tint = Color.White)
+                            Spacer(Modifier.size(8.dp))
+                            Text(if (startMillis == null) "Выбрать даты" else "Изменить даты", color = Color.White)
+                        }
                     }
                 }
+                3 -> Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Дата и время занятия", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF757575))
+                        if (lessonDateMillis != null || lessonTimeSet) {
+                            Text(
+                                buildString {
+                                    if (lessonDateMillis != null) append(lessonDateStr)
+                                    if (lessonDateMillis != null && lessonTimeSet) append(" в ")
+                                    if (lessonTimeSet) append(lessonTimeStr)
+                                },
+                                fontSize = 16.sp, fontWeight = FontWeight.Medium
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { showSingleDatePicker = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B7D3A))
+                            ) {
+                                Icon(Icons.Default.DateRange, contentDescription = null, tint = Color.White)
+                                Spacer(Modifier.size(6.dp))
+                                Text(if (lessonDateMillis == null) "Дата" else "Изм. дату", color = Color.White)
+                            }
+                            Button(
+                                onClick = { showTimePicker = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0277BD))
+                            ) {
+                                Icon(Icons.Default.Schedule, contentDescription = null, tint = Color.White)
+                                Spacer(Modifier.size(6.dp))
+                                Text(if (!lessonTimeSet) "Время" else "Изм. время", color = Color.White)
+                            }
+                        }
+                    }
+                }
+                // type 4: no date section
             }
 
             // WhatsApp account (only if more than one available)
@@ -1281,7 +1449,7 @@ fun WhatsAppReminderScreen(reminderType: Int, onBack: () -> Unit) {
             }
 
             // Message preview
-            if (startMillis != null && endMillis != null) {
+            if (showMessagePreview) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -1330,6 +1498,8 @@ private fun isAppInstalled(context: Context, packageName: String): Boolean =
 
 private fun formatDate(millis: Long): String =
     SimpleDateFormat("d MMMM", Locale("ru")).format(Date(millis))
+
+private fun formatTime(hour: Int, minute: Int): String = "%02d:%02d".format(hour, minute)
 
 private suspend fun readContacts(context: Context): List<WhatsAppContact> =
     withContext(Dispatchers.IO) {
