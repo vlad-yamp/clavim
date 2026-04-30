@@ -86,6 +86,9 @@ import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Mic
+import android.app.Activity
+import android.speech.RecognizerIntent
 import androidx.core.content.FileProvider
 import org.json.JSONObject
 import java.io.File
@@ -2178,6 +2181,8 @@ fun WhatsAppDogMessageScreen(onBack: () -> Unit) {
     var clarification by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf(prefs.getString("openai_api_key", "") ?: "") }
     var showApiKeyDialog by remember { mutableStateOf(false) }
+    var generatedVariants by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showVariantsList by remember { mutableStateOf(false) }
 
     val whatsappOptions = remember {
         buildList {
@@ -2225,6 +2230,15 @@ fun WhatsAppDogMessageScreen(onBack: () -> Unit) {
         }
     }
 
+    val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spoken.isNullOrBlank()) {
+                clarification = if (clarification.isBlank()) spoken else "$clarification $spoken"
+            }
+        }
+    }
+
     fun launchCamera() {
         if (context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             val file = File(context.cacheDir, "camera_photos/photo_${System.currentTimeMillis()}.jpg")
@@ -2242,9 +2256,14 @@ fun WhatsAppDogMessageScreen(onBack: () -> Unit) {
         scope.launch {
             isGenerating = true
             generateError = null
+            generatedMessage = ""
+            generatedVariants = emptyList()
+            showVariantsList = false
             isEditing = false
             try {
-                generatedMessage = generateDogOwnerMessage(dogName.trim(), apiKey, clarification.trim())
+                val variants = generateMultipleDogOwnerMessages(dogName.trim(), apiKey, clarification.trim())
+                generatedVariants = variants
+                if (variants.isNotEmpty()) showVariantsList = true
             } catch (e: Exception) {
                 generateError = "Ошибка: ${e.message}"
             }
@@ -2412,13 +2431,33 @@ fun WhatsAppDogMessageScreen(onBack: () -> Unit) {
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Уточнение для ChatGPT", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF757575))
-                    OutlinedTextField(
-                        value = clarification,
-                        onValueChange = { clarification = it },
-                        placeholder = { Text("Например: покороче, добавь юмор, на иврите...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 3
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = clarification,
+                            onValueChange = { clarification = it },
+                            placeholder = { Text("Например: покороче, добавь юмор, на иврите...") },
+                            modifier = Modifier.weight(1f),
+                            maxLines = 3
+                        )
+                        IconButton(
+                            onClick = {
+                                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
+                                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Говорите...")
+                                }
+                                try { speechLauncher.launch(intent) } catch (_: ActivityNotFoundException) {}
+                            },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(Color(0xFF6A1B9A), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Mic, contentDescription = "Голосовой ввод", tint = Color.White)
+                        }
+                    }
                 }
             }
 
@@ -2442,6 +2481,57 @@ fun WhatsAppDogMessageScreen(onBack: () -> Unit) {
 
             if (generateError != null) {
                 Text(generateError!!, color = Color(0xFFB00020), fontSize = 13.sp)
+            }
+
+            // Variants list for selection
+            if (showVariantsList && generatedVariants.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E5F5)),
+                    elevation = CardDefaults.cardElevation(2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            "Выберите лучший вариант",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp,
+                            color = Color(0xFF6A1B9A)
+                        )
+                        generatedVariants.forEachIndexed { index, variant ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                elevation = CardDefaults.cardElevation(1.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        "Вариант ${index + 1}",
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF9C27B0)
+                                    )
+                                    Text(variant, fontSize = 14.sp, color = Color(0xFF1C1B1F))
+                                    Button(
+                                        onClick = {
+                                            generatedMessage = variant
+                                            showVariantsList = false
+                                            isEditing = false
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A))
+                                    ) {
+                                        Text("Выбрать этот вариант", color = Color.White, fontSize = 14.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Generated message
@@ -2690,6 +2780,42 @@ fun OpenAiKeyDialog(currentKey: String, onDismiss: () -> Unit, onSave: (String) 
         }
     }
 }
+
+private suspend fun generateMultipleDogOwnerMessages(dogName: String, apiKey: String, clarification: String = ""): List<String> =
+    withContext(Dispatchers.IO) {
+        val url = URL("https://api.openai.com/v1/chat/completions")
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        conn.setRequestProperty("Authorization", "Bearer $apiKey")
+        conn.doOutput = true
+        conn.connectTimeout = 30000
+        conn.readTimeout = 30000
+
+        val name = dogName.ifBlank { "собака" }
+        val extra = if (clarification.isNotBlank()) " Дополнительное условие: $clarification." else ""
+        val prompt = "Напиши короткое (2-3 предложения) забавное и тёплое сообщение хозяину от имени передержки. Собака зовут $name. Сообщи, что всё хорошо и $name в прекрасном настроении. Используй лёгкий юмор, 1-2 эмодзи. Пиши на русском языке.$extra"
+        val escapedPrompt = prompt
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+        val body = """{"model":"gpt-4o-mini","messages":[{"role":"user","content":"$escapedPrompt"}],"max_tokens":200,"temperature":0.9,"n":10}"""
+
+        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+
+        val code = conn.responseCode
+        val responseText = if (code == 200) {
+            conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+        } else {
+            val err = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.readText() ?: "HTTP $code"
+            throw Exception("OpenAI $code: $err")
+        }
+
+        val choices = JSONObject(responseText).getJSONArray("choices")
+        (0 until choices.length()).map { i ->
+            choices.getJSONObject(i).getJSONObject("message").getString("content").trim()
+        }
+    }
 
 private suspend fun generateDogOwnerMessage(dogName: String, apiKey: String, clarification: String = ""): String =
     withContext(Dispatchers.IO) {
