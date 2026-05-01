@@ -10,7 +10,10 @@
       "Read(//c/Program Files/**)",
       "Read(//c/Program Files/Microsoft/**)",
       "Bash(grep -v \"^$\")",
-      "Bash(./gradlew assembleDebug)"
+      "Bash(./gradlew assembleDebug)",
+      "Bash(Get-Content \"D:\\\\Projects\\\\Android\\\\Clavim\\\\app\\\\src\\\\main\\\\java\\\\com\\\\dodisrael\\\\clavim\\\\MainActivity.kt\")",
+      "Bash(Measure-Object -Line)",
+      "PowerShell(Get-Content *)"
     ]
   }
 }
