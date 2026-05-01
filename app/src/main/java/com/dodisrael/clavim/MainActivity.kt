@@ -41,7 +41,8 @@ fun AppContent() {
     BackHandler(enabled = screen != Screen.MAIN) {
         screen = when (screen) {
             Screen.EXCHANGE_RATES, Screen.TELEGRAM_FOSTERING, Screen.OUR_DATA -> Screen.INFO
-            Screen.WHATSAPP_REMINDER, Screen.WHATSAPP_HOMEWORK, Screen.WHATSAPP_DOG_MESSAGE -> Screen.WHATSAPP
+            Screen.WHATSAPP_REMINDER, Screen.WHATSAPP_HOMEWORK, Screen.WHATSAPP_DOG_MESSAGE,
+            Screen.WHATSAPP_TRANSLATION -> Screen.WHATSAPP
             else -> Screen.MAIN
         }
     }
@@ -63,7 +64,8 @@ fun AppContent() {
             onFirstMessageClick = { screen = Screen.WHATSAPP_FIRST_MESSAGE },
             onReminderClick = { type -> reminderType = type; screen = Screen.WHATSAPP_REMINDER },
             onHomeworkClick = { screen = Screen.WHATSAPP_HOMEWORK },
-            onDogMessageClick = { screen = Screen.WHATSAPP_DOG_MESSAGE }
+            onDogMessageClick = { screen = Screen.WHATSAPP_DOG_MESSAGE },
+            onTranslationClick = { screen = Screen.WHATSAPP_TRANSLATION }
         )
         Screen.WHATSAPP_FIRST_MESSAGE -> WhatsAppFirstMessageScreen(
             onBack = { screen = Screen.WHATSAPP }
@@ -76,6 +78,9 @@ fun AppContent() {
             onBack = { screen = Screen.WHATSAPP }
         )
         Screen.WHATSAPP_DOG_MESSAGE -> WhatsAppDogMessageScreen(
+            onBack = { screen = Screen.WHATSAPP }
+        )
+        Screen.WHATSAPP_TRANSLATION -> WhatsAppTranslationScreen(
             onBack = { screen = Screen.WHATSAPP }
         )
         Screen.MAIN                -> MainMenuScreen(

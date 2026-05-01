@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -30,10 +31,11 @@ fun WhatsAppMenuScreen(
     onFirstMessageClick: () -> Unit,
     onReminderClick: (Int) -> Unit,
     onHomeworkClick: () -> Unit,
-    onDogMessageClick: () -> Unit
+    onDogMessageClick: () -> Unit,
+    onTranslationClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val items = remember { buildWhatsAppMenuItems(onFirstMessageClick, onReminderClick, onHomeworkClick, onDogMessageClick) }
+    val items = remember { buildWhatsAppMenuItems(onFirstMessageClick, onReminderClick, onHomeworkClick, onDogMessageClick, onTranslationClick) }
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(title = "WhatsApp", subtitle = "Шаблоны сообщений", showBack = true, onBack = onBack)
         LazyVerticalGrid(
@@ -52,10 +54,14 @@ private fun buildWhatsAppMenuItems(
     onFirstMessageClick: () -> Unit,
     onReminderClick: (Int) -> Unit,
     onHomeworkClick: () -> Unit,
-    onDogMessageClick: () -> Unit
+    onDogMessageClick: () -> Unit,
+    onTranslationClick: () -> Unit
 ): List<MenuItem> = listOf(
     MenuItem("Первое сообщение\nдля передержки", Icons.AutoMirrored.Filled.Chat, Color(0xFF1565C0)) { _ ->
         onFirstMessageClick()
+    },
+    MenuItem("Отчёт\nо передержке", Icons.Default.Pets, Color(0xFFFF6F00)) { _ ->
+        onDogMessageClick()
     },
     MenuItem("Напоминание\nо передержке 1", Icons.Default.Notifications, Color(0xFF25D366)) { _ ->
         onReminderClick(1)
@@ -72,7 +78,7 @@ private fun buildWhatsAppMenuItems(
     MenuItem("Задания\nпосле занятия", Icons.Default.Assignment, Color(0xFF00897B)) { _ ->
         onHomeworkClick()
     },
-    MenuItem("Сообщение\nвладельцу собаки", Icons.Default.Pets, Color(0xFFFF6F00)) { _ ->
-        onDogMessageClick()
+    MenuItem("Переписка\nс переводом", Icons.Default.Translate, Color(0xFF00796B)) { _ ->
+        onTranslationClick()
     }
 )

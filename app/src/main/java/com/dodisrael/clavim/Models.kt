@@ -7,7 +7,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 enum class Screen {
     MAIN, SHEETS, INFO, EXCHANGE_RATES, TELEGRAM_FOSTERING,
     ADVERTISING, WHATSAPP, WHATSAPP_REMINDER, OUR_DATA,
-    WHATSAPP_HOMEWORK, WHATSAPP_DOG_MESSAGE, WHATSAPP_FIRST_MESSAGE
+    WHATSAPP_HOMEWORK, WHATSAPP_DOG_MESSAGE, WHATSAPP_FIRST_MESSAGE,
+    WHATSAPP_TRANSLATION
 }
 
 data class MenuItem(
@@ -26,6 +27,12 @@ data class RateHistory(
 
 data class FosteringPost(val photoUrl: String, val caption: String)
 data class WhatsAppContact(val name: String, val phone: String)
+
+data class TranslationMessage(
+    val isIncoming: Boolean,
+    val originalText: String,
+    val translatedText: String
+)
 
 sealed class FosteringState {
     object Idle : FosteringState()
