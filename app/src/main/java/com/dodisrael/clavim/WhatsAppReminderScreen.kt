@@ -128,7 +128,8 @@ fun WhatsAppReminderScreen(reminderType: Int, onBack: () -> Unit) {
         1    -> "$greeting. Вы записаны на передержку с $startStr по $endStr. Если что-то изменится, сообщите, пожалуйста."
         2    -> "$greeting. Вы записаны на передержку с $startStr по $endStr. Во сколько вас ждать $startStr?"
         3    -> "$greeting. Это Ольга, кинолог. Вы записаны на пробное занятие с собакой на $lessonDateStr в $lessonTimeStr. Продолжительность занятия 1 час, стоимость 50 шек. Ниже инструкция по подготовке к занятию. До встречи."
-        else -> INSTRUCTIONS_TEXT
+        4 -> INSTRUCTIONS_TEXT
+        else -> REVIEW_AND_TELEGRAM_TEXT
     }
     val canSend = when (reminderType) {
         1, 2 -> startMillis != null && endMillis != null && selectedContact != null

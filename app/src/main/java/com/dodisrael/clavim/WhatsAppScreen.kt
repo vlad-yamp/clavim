@@ -69,6 +69,9 @@ private fun buildWhatsAppMenuItems(
     MenuItem("Напоминание\nо передержке 2", Icons.Default.Notifications, Color(0xFF128C7E)) { _ ->
         onReminderClick(2)
     },
+    MenuItem("Просьба\nоставить отзыв", Icons.Default.Notifications, Color(0xFF2E7D32)) { _ ->
+        onReminderClick(5)
+    },
     MenuItem("Напоминание о\nпервом занятии", Icons.Default.School, Color(0xFF6A1B9A)) { _ ->
         onReminderClick(3)
     },
