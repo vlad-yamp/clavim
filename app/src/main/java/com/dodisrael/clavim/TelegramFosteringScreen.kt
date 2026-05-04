@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -25,14 +26,15 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,7 +45,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -56,20 +60,26 @@ import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 
+private const val DEFAULT_MAX_PAGES = 50
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TelegramFosteringScreen(onBack: () -> Unit) {
     var query by remember { mutableStateOf("") }
+    var maxPagesInput by remember { mutableStateOf(DEFAULT_MAX_PAGES.toString()) }
     var state by remember { mutableStateOf<FosteringState>(FosteringState.Idle) }
-    var loadingPage by remember { mutableStateOf(0) }
+    var loadingPage by remember { mutableIntStateOf(0) }
+    var loadingTotal by remember { mutableIntStateOf(DEFAULT_MAX_PAGES) }
     val scope = rememberCoroutineScope()
 
     val doSearch: () -> Unit = {
         if (query.isNotBlank()) {
+            val maxPages = maxPagesInput.toIntOrNull()?.coerceIn(1, 500) ?: DEFAULT_MAX_PAGES
+            loadingTotal = maxPages
             state = FosteringState.Loading
             loadingPage = 0
             scope.launch {
-                state = fetchFosteringPhotos(query.trim()) { page -> loadingPage = page }
+                state = fetchFosteringPhotos(query.trim(), maxPages) { page -> loadingPage = page }
             }
         }
     }
@@ -86,6 +96,7 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.navigationBars)
         ) {
+            // Поисковая строка
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -118,6 +129,37 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
                 }
             }
 
+            // Поле для настройки глубины поиска
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 0.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Глубина поиска (страниц):",
+                    fontSize = 13.sp,
+                    color = Color(0xFF757575),
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = maxPagesInput,
+                    onValueChange = { v ->
+                        if (v.isEmpty() || v.all { it.isDigit() }) maxPagesInput = v
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { doSearch() }),
+                    modifier = Modifier.width(80.dp)
+                )
+            }
+
+            Spacer(Modifier.height(4.dp))
+
             when (val s = state) {
                 is FosteringState.Idle -> Box(
                     modifier = Modifier.fillMaxSize(),
@@ -131,22 +173,40 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
                         modifier = Modifier.padding(32.dp)
                     )
                 }
-                is FosteringState.Loading -> Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+
+                is FosteringState.Loading -> {
+                    val progress = if (loadingTotal > 0) loadingPage.toFloat() / loadingTotal else 0f
+                    val percent = (progress * 100).toInt()
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator()
-                        Text(
-                            "Поиск... страница $loadingPage из 50",
-                            color = Color(0xFF757575),
-                            fontSize = 15.sp
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.padding(horizontal = 32.dp)
+                        ) {
+                            Text(
+                                text = "Поиск...",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF424242)
+                            )
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Color(0xFF039BE5),
+                                trackColor = Color(0xFFBBDEFB)
+                            )
+                            Text(
+                                text = "Страница $loadingPage из $loadingTotal · $percent%",
+                                color = Color(0xFF757575),
+                                fontSize = 13.sp
+                            )
+                        }
                     }
                 }
+
                 is FosteringState.Error -> Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -159,6 +219,7 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
                         modifier = Modifier.padding(24.dp)
                     )
                 }
+
                 is FosteringState.Success -> key(s.posts) {
                     val pagerState = rememberPagerState { s.posts.size }
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -224,6 +285,7 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
 
 private suspend fun fetchFosteringPhotos(
     query: String,
+    maxPages: Int,
     onProgress: (Int) -> Unit
 ): FosteringState {
     return withContext(Dispatchers.IO) {
@@ -240,7 +302,7 @@ private suspend fun fetchFosteringPhotos(
             var beforeId: String? = null
             var fetchedAnyPage = false
 
-            for (page in 0 until 50) {
+            for (page in 0 until maxPages) {
                 onProgress(page + 1)
                 val urlStr = "https://t.me/s/DogIsraelTsafon" +
                     (beforeId?.let { "?before=$it" } ?: "")
