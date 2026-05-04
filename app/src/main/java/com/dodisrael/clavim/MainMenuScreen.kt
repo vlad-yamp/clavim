@@ -34,10 +34,11 @@ fun MainMenuScreen(
     onSheetsClick: () -> Unit,
     onInfoClick: () -> Unit,
     onAdvertisingClick: () -> Unit,
-    onWhatsAppClick: () -> Unit
+    onWhatsAppClick: () -> Unit,
+    onWebViewClick: (url: String, title: String) -> Unit
 ) {
     val context = LocalContext.current
-    val items = remember { buildMainMenuItems(onSheetsClick, onInfoClick, onAdvertisingClick, onWhatsAppClick) }
+    val items = remember { buildMainMenuItems(onSheetsClick, onInfoClick, onAdvertisingClick, onWhatsAppClick, onWebViewClick) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
@@ -61,19 +62,20 @@ private fun buildMainMenuItems(
     onSheetsClick: () -> Unit,
     onInfoClick: () -> Unit,
     onAdvertisingClick: () -> Unit,
-    onWhatsAppClick: () -> Unit
+    onWhatsAppClick: () -> Unit,
+    onWebViewClick: (url: String, title: String) -> Unit
 ): List<MenuItem> = listOf(
-    MenuItem("Наш сайт", Icons.Default.Language, Color(0xFF1565C0)) { ctx ->
-        ctx.openUrl("https://dogisrael.com")
+    MenuItem("Наш сайт", Icons.Default.Language, Color(0xFF1565C0)) { _ ->
+        onWebViewClick("https://dogisrael.com", "Наш сайт")
     },
-    MenuItem("Поиск в интернете", Icons.Default.Search, Color(0xFF0F9D58)) { ctx ->
+    MenuItem("Поиск в интернете", Icons.Default.Search, Color(0xFF0F9D58)) { _ ->
         val query = Uri.encode("Дрессировка собак Хайфа")
-        ctx.openUrl("https://www.google.com/search?q=$query")
+        onWebViewClick("https://www.google.com/search?q=$query", "Поиск в интернете")
     },
     MenuItem("Реклама", Icons.Default.Campaign, Color(0xFF4285F4)) { _ -> onAdvertisingClick() },
     MenuItem("WhatsApp", Icons.Default.Chat, Color(0xFF25D366)) { _ -> onWhatsAppClick() },
-    MenuItem("Тильда", Icons.Default.BarChart, Color(0xFF7B1FA2)) { ctx ->
-        ctx.openUrl("https://stats.tilda.cc/projects/statistics/?projectid=7284816&from=sitesettings")
+    MenuItem("Тильда", Icons.Default.BarChart, Color(0xFF7B1FA2)) { _ ->
+        onWebViewClick("https://stats.tilda.cc/projects/statistics/?projectid=7284816&from=sitesettings", "Тильда")
     },
     MenuItem("Телеграм-канал", Icons.AutoMirrored.Filled.Send, Color(0xFF039BE5)) { ctx ->
         val url = "https://t.me/DogIsraelTsafon"

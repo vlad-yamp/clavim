@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.StarRate
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Translate
@@ -69,7 +70,7 @@ private fun buildWhatsAppMenuItems(
     MenuItem("Напоминание\nо передержке 2", Icons.Default.Notifications, Color(0xFF128C7E)) { _ ->
         onReminderClick(2)
     },
-    MenuItem("Просьба\nоставить отзыв", Icons.Default.Notifications, Color(0xFF2E7D32)) { _ ->
+    MenuItem("Просьба\nоставить отзыв", Icons.Default.StarRate, Color(0xFF2E7D32)) { _ ->
         onReminderClick(5)
     },
     MenuItem("Напоминание о\nпервом занятии", Icons.Default.School, Color(0xFF6A1B9A)) { _ ->

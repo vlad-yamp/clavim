@@ -13,7 +13,8 @@
       "Bash(./gradlew assembleDebug)",
       "Bash(Get-Content \"D:\\\\Projects\\\\Android\\\\Clavim\\\\app\\\\src\\\\main\\\\java\\\\com\\\\dodisrael\\\\clavim\\\\MainActivity.kt\")",
       "Bash(Measure-Object -Line)",
-      "PowerShell(Get-Content *)"
+      "PowerShell(Get-Content *)",
+      "PowerShell(Get-ChildItem -Path \"D:\\\\Projects\\\\Android\\\\Clavim\\\\app\" -Recurse | Where-Object { $_.PSIsContainer } | Select-Object -First 50 FullName)"
     ]
   }
 }

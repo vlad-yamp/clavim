@@ -37,12 +37,21 @@ class MainActivity : ComponentActivity() {
 fun AppContent() {
     var screen by remember { mutableStateOf(Screen.MAIN) }
     var reminderType by remember { mutableStateOf(1) }
+    var webViewUrl by remember { mutableStateOf("") }
+    var webViewReturnScreen by remember { mutableStateOf(Screen.MAIN) }
+
+    fun openWebView(url: String, title: String, returnTo: Screen) {
+        webViewUrl = url
+        webViewReturnScreen = returnTo
+        screen = Screen.WEB_VIEW
+    }
 
     BackHandler(enabled = screen != Screen.MAIN) {
         screen = when (screen) {
             Screen.EXCHANGE_RATES, Screen.TELEGRAM_FOSTERING, Screen.OUR_DATA -> Screen.INFO
             Screen.WHATSAPP_REMINDER, Screen.WHATSAPP_HOMEWORK, Screen.WHATSAPP_DOG_MESSAGE,
             Screen.WHATSAPP_TRANSLATION -> Screen.WHATSAPP
+            Screen.WEB_VIEW -> webViewReturnScreen
             else -> Screen.MAIN
         }
     }
@@ -53,7 +62,8 @@ fun AppContent() {
             onBack = { screen = Screen.MAIN },
             onExchangeRatesClick = { screen = Screen.EXCHANGE_RATES },
             onTelegramFosteringClick = { screen = Screen.TELEGRAM_FOSTERING },
-            onOurDataClick = { screen = Screen.OUR_DATA }
+            onOurDataClick = { screen = Screen.OUR_DATA },
+            onWebViewClick = { url, title -> openWebView(url, title, Screen.INFO) }
         )
         Screen.OUR_DATA            -> OurDataScreen(onBack = { screen = Screen.INFO })
         Screen.EXCHANGE_RATES      -> ExchangeRatesScreen(onBack = { screen = Screen.INFO })
@@ -83,11 +93,16 @@ fun AppContent() {
         Screen.WHATSAPP_TRANSLATION -> WhatsAppTranslationScreen(
             onBack = { screen = Screen.WHATSAPP }
         )
+        Screen.WEB_VIEW            -> WebViewScreen(
+            url = webViewUrl,
+            onBack = { screen = webViewReturnScreen }
+        )
         Screen.MAIN                -> MainMenuScreen(
             onSheetsClick      = { screen = Screen.SHEETS },
             onInfoClick        = { screen = Screen.INFO },
             onAdvertisingClick = { screen = Screen.ADVERTISING },
-            onWhatsAppClick    = { screen = Screen.WHATSAPP }
+            onWhatsAppClick    = { screen = Screen.WHATSAPP },
+            onWebViewClick     = { url, title -> openWebView(url, title, Screen.MAIN) }
         )
     }
 }
