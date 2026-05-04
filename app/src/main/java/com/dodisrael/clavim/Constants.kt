@@ -1,7 +1,7 @@
 package com.dodisrael.clavim
 
 internal val REVIEW_AND_TELEGRAM_TEXT = """
-Будем очень благодарны, если вы найдёте пару минут и оставите отзыв о нашей передержке
+Будем очень благодарны, если вы найдёте пару минут и оставите отзыв о нашей передержке на картах Google.
 
 Оставить отзыв можно здесь:
 https://g.page/r/CalcPn97Y2tKEBM/review
