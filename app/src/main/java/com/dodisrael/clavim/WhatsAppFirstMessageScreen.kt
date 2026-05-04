@@ -106,19 +106,39 @@ fun WhatsAppFirstMessageScreen(onBack: () -> Unit) {
     val startStr = startMillis?.let { formatDate(it) } ?: ""
     val endStr   = endMillis?.let   { formatDate(it) } ?: ""
 
+    val days = if (startMillis != null && endMillis != null)
+        ((endMillis!! - startMillis!!) / 86_400_000L).toInt() else null
+
+    fun daysWord(n: Int) = when {
+        n % 100 in 11..19 -> "дней"
+        n % 10 == 1       -> "день"
+        n % 10 in 2..4    -> "дня"
+        else              -> "дней"
+    }
+
+    val daysLabel = days?.let { " ($it ${daysWord(it)})" } ?: ""
+
     val message = buildString {
-        appendLine("Добрый вечер. Это Ольга, по поводу передержки.")
-        appendLine("Вы записаны на передержку с $startStr по $endStr.")
-        appendLine("Стоимость 120 шек/сутки. Корм ваш.")
-        appendLine("Прогулки и кормление по вашему режиму.")
-        appendLine("Ежедневный фотоотчёт.")
-        appendLine("Собака должна быть привита от бешенства.")
-        appendLine("Если есть особенности ухода, аллергия и т.п., обязательно сообщите письменно.")
-        appendLine("Очень желательно предварительное встретиться 1-2 раза для знакомства и минимизации стресса.")
+        appendLine("${getGreeting()}!")
+        appendLine("Это Ольга, по поводу передержки.")
         appendLine()
-        appendLine("Адрес Кирьят Хаим, ул Хома уМигдаль 59 кв 4")
-        appendLine("Ссылка для навигатора Wase https://waze.com/ul/hsvbfwpncv")
-        append("Тел: +972506072764")
+        appendLine("Вы записаны на передержку с $startStr по $endStr$daysLabel.")
+        appendLine()
+        appendLine("Стоимость — 120 шекелей в сутки (корм предоставляется вами).")
+        appendLine("Прогулки и кормление — по вашему режиму.")
+        appendLine("Ежедневно высылаю фотоотчёт.")
+        appendLine()
+        appendLine("Пожалуйста, убедитесь, что собака привита от бешенства.")
+        appendLine("Если есть особенности ухода, аллергии или другие важные моменты — обязательно сообщите заранее в письменном виде.")
+        appendLine()
+        appendLine("Желательно предварительно встретиться 1–2 раза для знакомства — это поможет снизить стресс у собаки.")
+        appendLine()
+        appendLine("Адрес:")
+        appendLine("Кирьят Хаим, ул. Хома у-Мигдаль 59, кв. 4")
+        appendLine("Навигатор Waze:")
+        appendLine("https://waze.com/ul/hsvbfwpncv")
+        appendLine()
+        append("Позвонить: tel:+972506072764")
     }
 
     val canSend = startMillis != null && endMillis != null && selectedContact != null
@@ -197,7 +217,11 @@ fun WhatsAppFirstMessageScreen(onBack: () -> Unit) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Период передержки", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF757575))
                     if (startMillis != null && endMillis != null) {
-                        Text("с $startStr по $endStr", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            "с $startStr по $endStr$daysLabel",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                     Button(
                         onClick = { showDateRangePicker = true },
