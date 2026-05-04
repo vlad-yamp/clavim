@@ -1,7 +1,5 @@
 package com.dodisrael.clavim
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -35,10 +33,11 @@ fun MainMenuScreen(
     onInfoClick: () -> Unit,
     onAdvertisingClick: () -> Unit,
     onWhatsAppClick: () -> Unit,
+    onTelegramClick: () -> Unit,
     onWebViewClick: (url: String, title: String) -> Unit
 ) {
     val context = LocalContext.current
-    val items = remember { buildMainMenuItems(onSheetsClick, onInfoClick, onAdvertisingClick, onWhatsAppClick, onWebViewClick) }
+    val items = remember { buildMainMenuItems(onSheetsClick, onInfoClick, onAdvertisingClick, onWhatsAppClick, onTelegramClick, onWebViewClick) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
@@ -63,6 +62,7 @@ private fun buildMainMenuItems(
     onInfoClick: () -> Unit,
     onAdvertisingClick: () -> Unit,
     onWhatsAppClick: () -> Unit,
+    onTelegramClick: () -> Unit,
     onWebViewClick: (url: String, title: String) -> Unit
 ): List<MenuItem> = listOf(
     MenuItem("Наш сайт", Icons.Default.Language, Color(0xFF1565C0)) { _ ->
@@ -77,11 +77,7 @@ private fun buildMainMenuItems(
     MenuItem("Тильда", Icons.Default.BarChart, Color(0xFF7B1FA2)) { _ ->
         onWebViewClick("https://stats.tilda.cc/projects/statistics/?projectid=7284816&from=sitesettings", "Тильда")
     },
-    MenuItem("Телеграм-канал", Icons.AutoMirrored.Filled.Send, Color(0xFF039BE5)) { ctx ->
-        val url = "https://t.me/DogIsraelTsafon"
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { setPackage("org.telegram.messenger") }
-        try { ctx.startActivity(intent) } catch (_: ActivityNotFoundException) { ctx.openUrl(url) }
-    },
+    MenuItem("Телеграм", Icons.AutoMirrored.Filled.Send, Color(0xFF039BE5)) { _ -> onTelegramClick() },
     MenuItem("Таблицы\nGoogle", Icons.Default.TableChart, Color(0xFF1A8754)) { _ -> onSheetsClick() },
     MenuItem("Информация", Icons.Default.Info, Color(0xFF0277BD)) { _ -> onInfoClick() }
 )

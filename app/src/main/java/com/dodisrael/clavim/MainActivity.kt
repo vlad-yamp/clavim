@@ -97,11 +97,13 @@ fun AppContent() {
             url = webViewUrl,
             onBack = { screen = webViewReturnScreen }
         )
+        Screen.TELEGRAM            -> TelegramMenuScreen(onBack = { screen = Screen.MAIN })
         Screen.MAIN                -> MainMenuScreen(
             onSheetsClick      = { screen = Screen.SHEETS },
             onInfoClick        = { screen = Screen.INFO },
             onAdvertisingClick = { screen = Screen.ADVERTISING },
             onWhatsAppClick    = { screen = Screen.WHATSAPP },
+            onTelegramClick    = { screen = Screen.TELEGRAM },
             onWebViewClick     = { url, title -> openWebView(url, title, Screen.MAIN) }
         )
     }

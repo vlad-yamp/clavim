@@ -234,11 +234,13 @@ fun WhatsAppReminderScreen(reminderType: Int, onBack: () -> Unit) {
             title = when (reminderType) {
                 3    -> "Первое занятие"
                 4    -> "Инструкции"
-                else -> "Напоминание $reminderType"
+                5    -> "Просьба об отзыве"
+                else -> "Напоминание"
             },
             subtitle = when (reminderType) {
                 3    -> "Напоминание для клиента"
                 4    -> "Подготовка к занятию"
+                5    -> "Запрос отзыва клиенту"
                 else -> "Сообщение для WhatsApp"
             },
             showBack = true,
