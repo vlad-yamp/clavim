@@ -1,15 +1,20 @@
 package com.dodisrael.clavim
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -122,11 +127,10 @@ private fun CurrencyCalculatorCard(
     var from by remember { mutableStateOf(CalcCurrency.USD) }
     var to by remember { mutableStateOf(CalcCurrency.RUB) }
     var amountText by remember { mutableStateOf("") }
-    var resultText by remember { mutableStateOf("") }
 
-    fun rate(from: CalcCurrency, to: CalcCurrency): Double {
-        if (from == to) return 1.0
-        return when (from to to) {
+    fun rate(f: CalcCurrency, t: CalcCurrency): Double {
+        if (f == t) return 1.0
+        return when (f to t) {
             CalcCurrency.USD to CalcCurrency.RUB -> usdRub
             CalcCurrency.RUB to CalcCurrency.USD -> 1.0 / usdRub
             CalcCurrency.USD to CalcCurrency.ILS -> usdIls
@@ -137,118 +141,139 @@ private fun CurrencyCalculatorCard(
         }
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    val result = amountText.toDoubleOrNull()?.let { it * rate(from, to) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(Color(0xFFE3F2FD), Color(0xFFE1F5FE)),
+                    start = Offset(0f, 0f),
+                    end = Offset(900f, 600f)
+                )
+            )
+            .padding(20.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+
             Text(
                 text = "Расчёт суммы",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1C1B1F)
+                color = Color(0xFF0D47A1),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CurrencyDropDown(
-                    value = from,
-                    onChange = { from = it },
-                    modifier = Modifier.weight(1f)   // было 0.8f
-                )
-
+            // FROM
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Из", color = Color(0xFF546E7A), fontSize = 12.sp)
+                CurrencyChipRow(selected = from, onSelect = { from = it })
                 OutlinedTextField(
                     value = amountText,
-                    onValueChange = { amountText = it.replace(',', '.') },
-                    label = { Text("Сумма", fontSize = 10.sp) },
-                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                    onValueChange = { v ->
+                        if (v.all { it.isDigit() || it == '.' || it == ',' })
+                            amountText = v.replace(',', '.')
+                    },
+                    placeholder = {
+                        Text(
+                            "0",
+                            fontSize = 28.sp,
+                            color = Color(0xFFB0BEC5),
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center
+                        )
+                    },
+                    textStyle = LocalTextStyle.current.copy(
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1C1B1F),
+                        textAlign = TextAlign.Center
+                    ),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.weight(1.2f)
-                )
-
-                CurrencyDropDown(
-                    value = to,
-                    onChange = { to = it },
-                    modifier = Modifier.weight(1f)   // было 0.8f
-                )
-
-                OutlinedTextField(
-                    value = resultText,
-                    onValueChange = {},
-                    label = { Text("Итог", fontSize = 10.sp) },
-                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
-                    readOnly = true,
-                    singleLine = true,
-                    modifier = Modifier.weight(1.4f)
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF1565C0),
+                        unfocusedBorderColor = Color(0xFFB0BEC5),
+                        cursorColor = Color(0xFF1565C0),
+                        unfocusedContainerColor = Color.White,
+                        focusedContainerColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
 
-            Button(
-                onClick = {
-                    val amount = amountText.toDoubleOrNull()
-                    resultText = if (amount != null) {
-                        "%.2f %s".format(amount * rate(from, to), to.sign)
-                    } else {
-                        ""
-                    }
-                },
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+            // Кнопка обмена
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                IconButton(
+                    onClick = { val tmp = from; from = to; to = tmp },
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(Color(0xFF1565C0).copy(alpha = 0.1f))
+                ) {
+                    Icon(Icons.Default.SwapVert, contentDescription = "Поменять", tint = Color(0xFF1565C0))
+                }
+            }
+
+            // TO
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("В", color = Color(0xFF546E7A), fontSize = 12.sp)
+                CurrencyChipRow(selected = to, onSelect = { to = it })
+            }
+
+            // Результат
+            Box(
                 modifier = Modifier
-                    .height(36.dp)
-                    .align(Alignment.End)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (result != null) Color(0xFF1565C0).copy(alpha = 0.08f) else Color(0x00000000))
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Text("Рассчитать", fontSize = 13.sp)
+                if (result != null) {
+                    Text(
+                        text = "= ${"%.2f".format(result)} ${to.sign}",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0D47A1),
+                        textAlign = TextAlign.Center
+                    )
+                } else {
+                    Text(
+                        text = "Введите сумму",
+                        fontSize = 14.sp,
+                        color = Color(0xFFB0BEC5),
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun CurrencyDropDown(
-    value: CalcCurrency,
-    onChange: (CalcCurrency) -> Unit,
-    modifier: Modifier = Modifier
+private fun CurrencyChipRow(
+    selected: CalcCurrency,
+    onSelect: (CalcCurrency) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Box(modifier = modifier) {
-        OutlinedButton(
-            onClick = { expanded = true },
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-        ) {
-            Text(
-                text = value.title,
-                fontSize = 13.sp,
-                maxLines = 1,              // <- запрет переноса
-                softWrap = false           // <- ключевой момент
-            )
-        }
-
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            CalcCurrency.values().forEach { currency ->
-                DropdownMenuItem(
-                    text = {
-                        Text(currency.title)
-                    },
-                    onClick = {
-                        onChange(currency)
-                        expanded = false
-                    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        CalcCurrency.values().forEach { currency ->
+            val isSelected = currency == selected
+            Button(
+                onClick = { onSelect(currency) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isSelected) Color(0xFF1565C0) else Color.White,
+                    contentColor = if (isSelected) Color.White else Color(0xFF546E7A)
+                ),
+                shape = RoundedCornerShape(50),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                modifier = Modifier.height(36.dp)
+            ) {
+                Text(
+                    text = "${currency.sign} ${currency.title}",
+                    fontSize = 13.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                 )
             }
         }
