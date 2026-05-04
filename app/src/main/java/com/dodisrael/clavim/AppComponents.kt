@@ -1,6 +1,7 @@
 package com.dodisrael.clavim
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -78,18 +80,24 @@ fun AppHeader(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (!showBack) {
-                CuteDog(modifier = Modifier.size(110.dp))
+                Image(
+                    painter = painterResource(R.mipmap.ic_launcher_foreground),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(73.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                )
                 Spacer(modifier = Modifier.height(8.dp))
             } else {
                 Spacer(modifier = Modifier.height(44.dp))
+                Text(
+                    text = title,
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
             }
-            Text(
-                text = title,
-                color = Color.White,
-                fontSize = if (showBack) 20.sp else 26.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
-            )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = subtitle,
