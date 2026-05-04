@@ -14,7 +14,11 @@
       "Bash(Get-Content \"D:\\\\Projects\\\\Android\\\\Clavim\\\\app\\\\src\\\\main\\\\java\\\\com\\\\dodisrael\\\\clavim\\\\MainActivity.kt\")",
       "Bash(Measure-Object -Line)",
       "PowerShell(Get-Content *)",
-      "PowerShell(Get-ChildItem -Path \"D:\\\\Projects\\\\Android\\\\Clavim\\\\app\" -Recurse | Where-Object { $_.PSIsContainer } | Select-Object -First 50 FullName)"
+      "PowerShell(Get-ChildItem -Path \"D:\\\\Projects\\\\Android\\\\Clavim\\\\app\" -Recurse | Where-Object { $_.PSIsContainer } | Select-Object -First 50 FullName)",
+      "Bash(magick --version)",
+      "Bash(convert --version)",
+      "Bash(magick \"D:\\\\Projects\\\\Android\\\\Clavim\\\\app\\\\src\\\\main\\\\res\\\\icon_source.jpg\" -print \"Size: %wx%h\\\\n\" /dev/null)",
+      "Bash(magick identify *)"
     ]
   }
 }
