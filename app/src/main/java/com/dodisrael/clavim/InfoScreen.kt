@@ -28,10 +28,10 @@ import androidx.compose.material.icons.filled.Bed
 import androidx.compose.material.icons.filled.ContactPage
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CurrencyExchange
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RateReview
-import androidx.compose.material.icons.filled.Slideshow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -51,12 +51,11 @@ import androidx.compose.ui.unit.sp
 fun InfoMenuScreen(
     onBack: () -> Unit,
     onExchangeRatesClick: () -> Unit,
-    onTelegramFosteringClick: () -> Unit,
     onOurDataClick: () -> Unit,
     onWebViewClick: (url: String, title: String) -> Unit
 ) {
     val context = LocalContext.current
-    val items = remember { buildInfoMenuItems(onExchangeRatesClick, onTelegramFosteringClick, onOurDataClick, onWebViewClick) }
+    val items = remember { buildInfoMenuItems(onExchangeRatesClick, onOurDataClick, onWebViewClick) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
@@ -79,13 +78,9 @@ fun InfoMenuScreen(
 
 private fun buildInfoMenuItems(
     onExchangeRatesClick: () -> Unit,
-    onTelegramFosteringClick: () -> Unit,
     onOurDataClick: () -> Unit,
     onWebViewClick: (url: String, title: String) -> Unit
 ): List<MenuItem> = listOf(
-    MenuItem("Фото из\nTelegram", Icons.Default.Slideshow, Color(0xFF039BE5)) { _ ->
-        onTelegramFosteringClick()
-    },
     MenuItem("Курсы\nвалют", Icons.Default.CurrencyExchange, Color(0xFF00695C)) { _ ->
         onExchangeRatesClick()
     },
@@ -106,6 +101,9 @@ private fun buildInfoMenuItems(
     },
     MenuItem("Фото\nпередержки", Icons.Default.PhotoLibrary, Color(0xFF558B2F)) { ctx ->
         ctx.openUrl("https://docs.google.com/document/d/e/2PACX-1vSugkyexuBk6HAV1pyH2SiOpkdiIH9M7y3e1e75zFiNR3MIB1V9adrwgAyNgmLGHjf-SrJIyR8Ac7vk/pub?widget=true&headers=false#gid=0?&single=true")
+    },
+    MenuItem("Токены\nOpenAI", Icons.Default.Key, Color(0xFF10A37F)) { _ ->
+        onWebViewClick("https://platform.openai.com/usage", "Токены OpenAI")
     }
 )
 

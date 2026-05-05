@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -74,6 +75,7 @@ fun WhatsAppFirstMessageScreen(onBack: () -> Unit) {
     val dateRangePickerState = rememberDateRangePickerState()
     var startMillis by remember { mutableStateOf<Long?>(null) }
     var endMillis by remember { mutableStateOf<Long?>(null) }
+    var dogCount by remember { mutableStateOf(1) }
 
     val whatsappOptions = remember {
         buildList {
@@ -118,13 +120,16 @@ fun WhatsAppFirstMessageScreen(onBack: () -> Unit) {
 
     val daysLabel = days?.let { " ($it ${daysWord(it)})" } ?: ""
 
+    val pricePerDay = when (dogCount) { 2 -> 180; 3 -> 240; else -> 120 }
+    val dogsSuffix  = if (dogCount >= 2) " за $dogCount собаки" else ""
+
     val message = buildString {
         appendLine("${getGreeting()}!")
         appendLine("Это Ольга, по поводу передержки.")
         appendLine()
         appendLine("Вы записаны на передержку с $startStr по $endStr$daysLabel.")
         appendLine()
-        appendLine("Стоимость — 120 шекелей в сутки (корм предоставляется вами).")
+        appendLine("Стоимость — $pricePerDay шекелей в сутки$dogsSuffix (корм предоставляется вами).")
         appendLine("Прогулки и кормление — по вашему режиму.")
         appendLine("Ежедневно высылаю фотоотчёт.")
         appendLine()
@@ -230,6 +235,38 @@ fun WhatsAppFirstMessageScreen(onBack: () -> Unit) {
                         Icon(Icons.Default.DateRange, contentDescription = null, tint = Color.White)
                         Spacer(Modifier.size(8.dp))
                         Text(if (startMillis == null) "Выбрать даты" else "Изменить даты", color = Color.White)
+                    }
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Количество собак", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF757575))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(1, 2, 3).forEach { n ->
+                            val selected = dogCount == n
+                            val price = when (n) { 2 -> 180; 3 -> 240; else -> 120 }
+                            Button(
+                                onClick = { dogCount = n },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (selected) Color(0xFF1565C0) else Color(0xFFF5F5F5),
+                                    contentColor   = if (selected) Color.White else Color(0xFF424242)
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.height(52.dp)
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("$n ${if (n == 1) "собака" else "собаки"}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("$price ₪/день", fontSize = 11.sp)
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -18,7 +18,8 @@
       "Bash(magick --version)",
       "Bash(convert --version)",
       "Bash(magick \"D:\\\\Projects\\\\Android\\\\Clavim\\\\app\\\\src\\\\main\\\\res\\\\icon_source.jpg\" -print \"Size: %wx%h\\\\n\" /dev/null)",
-      "Bash(magick identify *)"
+      "Bash(magick identify *)",
+      "Bash(./gradlew compileDebugKotlin)"
     ]
   }
 }

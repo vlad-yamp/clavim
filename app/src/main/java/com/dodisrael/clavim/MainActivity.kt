@@ -48,7 +48,8 @@ fun AppContent() {
 
     BackHandler(enabled = screen != Screen.MAIN) {
         screen = when (screen) {
-            Screen.EXCHANGE_RATES, Screen.TELEGRAM_FOSTERING, Screen.OUR_DATA -> Screen.INFO
+            Screen.EXCHANGE_RATES, Screen.OUR_DATA -> Screen.INFO
+            Screen.TELEGRAM_FOSTERING -> Screen.TELEGRAM
             Screen.WHATSAPP_REMINDER, Screen.WHATSAPP_HOMEWORK, Screen.WHATSAPP_DOG_MESSAGE,
             Screen.WHATSAPP_TRANSLATION -> Screen.WHATSAPP
             Screen.WEB_VIEW -> webViewReturnScreen
@@ -61,13 +62,12 @@ fun AppContent() {
         Screen.INFO                -> InfoMenuScreen(
             onBack = { screen = Screen.MAIN },
             onExchangeRatesClick = { screen = Screen.EXCHANGE_RATES },
-            onTelegramFosteringClick = { screen = Screen.TELEGRAM_FOSTERING },
             onOurDataClick = { screen = Screen.OUR_DATA },
             onWebViewClick = { url, title -> openWebView(url, title, Screen.INFO) }
         )
         Screen.OUR_DATA            -> OurDataScreen(onBack = { screen = Screen.INFO })
         Screen.EXCHANGE_RATES      -> ExchangeRatesScreen(onBack = { screen = Screen.INFO })
-        Screen.TELEGRAM_FOSTERING  -> TelegramFosteringScreen(onBack = { screen = Screen.INFO })
+        Screen.TELEGRAM_FOSTERING  -> TelegramFosteringScreen(onBack = { screen = Screen.TELEGRAM })
         Screen.ADVERTISING         -> AdvertisingMenuScreen(onBack = { screen = Screen.MAIN })
         Screen.WHATSAPP            -> WhatsAppMenuScreen(
             onBack = { screen = Screen.MAIN },
@@ -97,7 +97,10 @@ fun AppContent() {
             url = webViewUrl,
             onBack = { screen = webViewReturnScreen }
         )
-        Screen.TELEGRAM            -> TelegramMenuScreen(onBack = { screen = Screen.MAIN })
+        Screen.TELEGRAM            -> TelegramMenuScreen(
+            onBack = { screen = Screen.MAIN },
+            onTelegramFosteringClick = { screen = Screen.TELEGRAM_FOSTERING }
+        )
         Screen.MAIN                -> MainMenuScreen(
             onSheetsClick      = { screen = Screen.SHEETS },
             onInfoClick        = { screen = Screen.INFO },
