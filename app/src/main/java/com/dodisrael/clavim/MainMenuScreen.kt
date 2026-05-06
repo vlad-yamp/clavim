@@ -13,7 +13,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Info
@@ -74,9 +73,6 @@ private fun buildMainMenuItems(
     },
     MenuItem("Реклама", Icons.Default.Campaign, Color(0xFF4285F4)) { _ -> onAdvertisingClick() },
     MenuItem("WhatsApp", Icons.Default.Chat, Color(0xFF25D366)) { _ -> onWhatsAppClick() },
-    MenuItem("Тильда", Icons.Default.BarChart, Color(0xFF7B1FA2)) { _ ->
-        onWebViewClick("https://stats.tilda.cc/projects/statistics/?projectid=7284816&from=sitesettings", "Тильда")
-    },
     MenuItem("Телеграм", Icons.AutoMirrored.Filled.Send, Color(0xFF039BE5)) { _ -> onTelegramClick() },
     MenuItem("Таблицы\nGoogle", Icons.Default.TableChart, Color(0xFF1A8754)) { _ -> onSheetsClick() },
     MenuItem("Информация", Icons.Default.Info, Color(0xFF0277BD)) { _ -> onInfoClick() }

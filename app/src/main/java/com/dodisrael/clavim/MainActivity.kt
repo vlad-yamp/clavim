@@ -68,7 +68,10 @@ fun AppContent() {
         Screen.OUR_DATA            -> OurDataScreen(onBack = { screen = Screen.INFO })
         Screen.EXCHANGE_RATES      -> ExchangeRatesScreen(onBack = { screen = Screen.INFO })
         Screen.TELEGRAM_FOSTERING  -> TelegramFosteringScreen(onBack = { screen = Screen.TELEGRAM })
-        Screen.ADVERTISING         -> AdvertisingMenuScreen(onBack = { screen = Screen.MAIN })
+        Screen.ADVERTISING         -> AdvertisingMenuScreen(
+            onBack = { screen = Screen.MAIN },
+            onWebViewClick = { url, title -> openWebView(url, title, Screen.ADVERTISING) }
+        )
         Screen.WHATSAPP            -> WhatsAppMenuScreen(
             onBack = { screen = Screen.MAIN },
             onFirstMessageClick = { screen = Screen.WHATSAPP_FIRST_MESSAGE },
