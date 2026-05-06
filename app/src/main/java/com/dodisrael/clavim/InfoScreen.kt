@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.Bed
 import androidx.compose.material.icons.filled.ContactPage
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CurrencyExchange
-import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RateReview
@@ -101,9 +100,6 @@ private fun buildInfoMenuItems(
     },
     MenuItem("Фото\nпередержки", Icons.Default.PhotoLibrary, Color(0xFF558B2F)) { ctx ->
         ctx.openUrl("https://docs.google.com/document/d/e/2PACX-1vSugkyexuBk6HAV1pyH2SiOpkdiIH9M7y3e1e75zFiNR3MIB1V9adrwgAyNgmLGHjf-SrJIyR8Ac7vk/pub?widget=true&headers=false#gid=0?&single=true")
-    },
-    MenuItem("Токены\nOpenAI", Icons.Default.Key, Color(0xFF10A37F)) { _ ->
-        onWebViewClick("https://platform.openai.com/usage", "Токены OpenAI")
     }
 )
 

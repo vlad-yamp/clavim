@@ -20,7 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -45,9 +47,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,21 +62,22 @@ import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 
-private const val DEFAULT_MAX_PAGES = 50
+private const val DEFAULT_MAX_PAGES = 100
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TelegramFosteringScreen(onBack: () -> Unit) {
     var query by remember { mutableStateOf("") }
-    var maxPagesInput by remember { mutableStateOf(DEFAULT_MAX_PAGES.toString()) }
+    var maxPages by remember { mutableIntStateOf(DEFAULT_MAX_PAGES) }
     var state by remember { mutableStateOf<FosteringState>(FosteringState.Idle) }
     var loadingPage by remember { mutableIntStateOf(0) }
     var loadingTotal by remember { mutableIntStateOf(DEFAULT_MAX_PAGES) }
     val scope = rememberCoroutineScope()
+    val keyboard = LocalSoftwareKeyboardController.current
 
     val doSearch: () -> Unit = {
         if (query.isNotBlank()) {
-            val maxPages = maxPagesInput.toIntOrNull()?.coerceIn(1, 500) ?: DEFAULT_MAX_PAGES
+            keyboard?.hide()
             loadingTotal = maxPages
             state = FosteringState.Loading
             loadingPage = 0
@@ -129,7 +132,7 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
                 }
             }
 
-            // Поле для настройки глубины поиска
+            // Настройка глубины поиска
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -143,19 +146,26 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
                     color = Color(0xFF757575),
                     modifier = Modifier.weight(1f)
                 )
-                OutlinedTextField(
-                    value = maxPagesInput,
-                    onValueChange = { v ->
-                        if (v.isEmpty() || v.all { it.isDigit() }) maxPagesInput = v
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(onDone = { doSearch() }),
-                    modifier = Modifier.width(80.dp)
+                IconButton(
+                    onClick = { if (maxPages > 50) maxPages -= 50 },
+                    enabled = maxPages > 50
+                ) {
+                    Icon(Icons.Default.Remove, contentDescription = "Меньше", tint = Color(0xFF039BE5))
+                }
+                Text(
+                    text = maxPages.toString(),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF1C1B1F),
+                    modifier = Modifier.width(40.dp),
+                    textAlign = TextAlign.Center
                 )
+                IconButton(
+                    onClick = { if (maxPages < 500) maxPages += 50 },
+                    enabled = maxPages < 500
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Больше", tint = Color(0xFF039BE5))
+                }
             }
 
             Spacer(Modifier.height(4.dp))
