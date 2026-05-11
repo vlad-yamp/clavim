@@ -108,7 +108,7 @@ fun WhatsAppPickupScreen(onBack: () -> Unit) {
     val datePhrase = endDateMillis?.let { pickupDatePhrase(it) } ?: ""
     val greeting = getGreeting()
     val message = if (endDateMillis != null)
-        "$greeting, $datePhrase заканчивается передержка, когда Вас ждать?"
+        "$greeting, $datePhrase заканчивается передержка, во сколько Вас ждать?"
     else ""
 
     val canSend = endDateMillis != null && selectedContact != null
