@@ -51,7 +51,7 @@ fun AppContent() {
             Screen.EXCHANGE_RATES, Screen.OUR_DATA -> Screen.INFO
             Screen.TELEGRAM_FOSTERING -> Screen.TELEGRAM
             Screen.WHATSAPP_REMINDER, Screen.WHATSAPP_HOMEWORK, Screen.WHATSAPP_DOG_MESSAGE,
-            Screen.WHATSAPP_TRANSLATION -> Screen.WHATSAPP
+            Screen.WHATSAPP_TRANSLATION, Screen.WHATSAPP_PICKUP -> Screen.WHATSAPP
             Screen.WEB_VIEW -> webViewReturnScreen
             else -> Screen.MAIN
         }
@@ -78,7 +78,8 @@ fun AppContent() {
             onReminderClick = { type -> reminderType = type; screen = Screen.WHATSAPP_REMINDER },
             onHomeworkClick = { screen = Screen.WHATSAPP_HOMEWORK },
             onDogMessageClick = { screen = Screen.WHATSAPP_DOG_MESSAGE },
-            onTranslationClick = { screen = Screen.WHATSAPP_TRANSLATION }
+            onTranslationClick = { screen = Screen.WHATSAPP_TRANSLATION },
+            onPickupClick = { screen = Screen.WHATSAPP_PICKUP }
         )
         Screen.WHATSAPP_FIRST_MESSAGE -> WhatsAppFirstMessageScreen(
             onBack = { screen = Screen.WHATSAPP }
@@ -94,6 +95,9 @@ fun AppContent() {
             onBack = { screen = Screen.WHATSAPP }
         )
         Screen.WHATSAPP_TRANSLATION -> WhatsAppTranslationScreen(
+            onBack = { screen = Screen.WHATSAPP }
+        )
+        Screen.WHATSAPP_PICKUP     -> WhatsAppPickupScreen(
             onBack = { screen = Screen.WHATSAPP }
         )
         Screen.WEB_VIEW            -> WebViewScreen(

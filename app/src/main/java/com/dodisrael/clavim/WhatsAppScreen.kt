@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.StarRate
 import androidx.compose.material.icons.filled.Pets
@@ -33,10 +34,11 @@ fun WhatsAppMenuScreen(
     onReminderClick: (Int) -> Unit,
     onHomeworkClick: () -> Unit,
     onDogMessageClick: () -> Unit,
-    onTranslationClick: () -> Unit
+    onTranslationClick: () -> Unit,
+    onPickupClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val items = remember { buildWhatsAppMenuItems(onFirstMessageClick, onReminderClick, onHomeworkClick, onDogMessageClick, onTranslationClick) }
+    val items = remember { buildWhatsAppMenuItems(onFirstMessageClick, onReminderClick, onHomeworkClick, onDogMessageClick, onTranslationClick, onPickupClick) }
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(title = "WhatsApp", subtitle = "Шаблоны сообщений", showBack = true, onBack = onBack)
         LazyVerticalGrid(
@@ -56,7 +58,8 @@ private fun buildWhatsAppMenuItems(
     onReminderClick: (Int) -> Unit,
     onHomeworkClick: () -> Unit,
     onDogMessageClick: () -> Unit,
-    onTranslationClick: () -> Unit
+    onTranslationClick: () -> Unit,
+    onPickupClick: () -> Unit
 ): List<MenuItem> = listOf(
     MenuItem("Первое сообщение\nдля передержки", Icons.AutoMirrored.Filled.Chat, Color(0xFF1565C0)) { _ ->
         onFirstMessageClick()
@@ -69,6 +72,9 @@ private fun buildWhatsAppMenuItems(
     },
     MenuItem("Напоминание\nо передержке 2", Icons.Default.Notifications, Color(0xFF128C7E)) { _ ->
         onReminderClick(2)
+    },
+    MenuItem("Когда вы\nзаберёте собаку?", Icons.AutoMirrored.Filled.DirectionsRun, Color(0xFF00838F)) { _ ->
+        onPickupClick()
     },
     MenuItem("Просьба\nоставить отзыв", Icons.Default.StarRate, Color(0xFF2E7D32)) { _ ->
         onReminderClick(5)
