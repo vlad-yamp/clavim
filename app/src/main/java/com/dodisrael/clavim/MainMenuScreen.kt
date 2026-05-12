@@ -78,6 +78,6 @@ private fun buildMainMenuItems(
     MenuItem("WhatsApp", Icons.Default.Chat, Color(0xFF25D366)) { _ -> onWhatsAppClick() },
     MenuItem("Телеграм", Icons.AutoMirrored.Filled.Send, Color(0xFF039BE5)) { _ -> onTelegramClick() },
     MenuItem("Таблицы\nGoogle", Icons.Default.TableChart, Color(0xFF1A8754)) { _ -> onSheetsClick() },
-    MenuItem("Спросить про\nпередержку", Icons.Default.Mic, Color(0xFF5E35B1)) { _ -> onBoardingAssistantClick() },
+    MenuItem("Голосовой\nассистент", Icons.Default.Mic, Color(0xFF5E35B1)) { _ -> onBoardingAssistantClick() },
     MenuItem("Информация", Icons.Default.Info, Color(0xFF0277BD)) { _ -> onInfoClick() }
 )

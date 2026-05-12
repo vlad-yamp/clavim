@@ -37,12 +37,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -105,6 +107,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
     var answer by remember { mutableStateOf("") }
     var errorText by remember { mutableStateOf("") }
     var isSpeaking by remember { mutableStateOf(false) }
+    var voiceComment by remember { mutableStateOf("") }
     var answerWebViewHeight by remember { mutableStateOf(100.dp) }
 
     // TextToSpeech lifecycle
@@ -156,6 +159,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
             isLoading = true
             errorText = ""
             answer = ""
+            voiceComment = ""
             try {
                 loadingStatus = "Загружаю данные таблицы..."
                 val (csv, merges) = coroutineScope {
@@ -170,7 +174,15 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                 val sheetText   = filteredRows.joinToString("\n") { row -> row.joinToString(" | ") }
 
                 loadingStatus = "Спрашиваю ChatGPT..."
-                answer = askBoardingAssistant(question, sheetText, apiKey, year)
+                val (html, voice) = askBoardingAssistant(question, sheetText, apiKey, year)
+                answer = html
+                voiceComment = voice
+
+                if (voice.isNotBlank()) {
+                    val plainLen = android.text.Html.fromHtml(html, android.text.Html.FROM_HTML_MODE_COMPACT)
+                        .toString().trim().length
+                    if (plainLen < 200) speak(voice)
+                }
             } catch (e: Exception) {
                 errorText = "Ошибка: ${e.message}"
             }
@@ -403,26 +415,37 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                         )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            OutlinedButton(
-                                onClick = { speak(answer) },
-                                modifier = Modifier.weight(1f),
-                                enabled = !isSpeaking
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isSpeaking) accentColor else accentColor.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.VolumeUp,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.size(6.dp))
-                                Text(if (isSpeaking) "Читает..." else "Прослушать")
+                                IconButton(
+                                    onClick = { if (isSpeaking) stopSpeaking() else speak(voiceComment) },
+                                    enabled = voiceComment.isNotBlank(),
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Icon(
+                                        if (isSpeaking) Icons.Default.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                                        contentDescription = "Прослушать",
+                                        tint = if (isSpeaking) Color.White
+                                               else if (voiceComment.isNotBlank()) accentColor
+                                               else Color(0xFFBDBDBD),
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
                             }
                             Button(
                                 onClick = {
                                     stopSpeaking()
                                     question = ""
                                     answer = ""
+                                    voiceComment = ""
                                     errorText = ""
                                     launchSpeech()
                                 },
@@ -592,7 +615,7 @@ private fun buildGridWithMerges(csvRows: List<List<String>>, merges: List<MergeR
     return grid
 }
 
-private suspend fun askBoardingAssistant(question: String, sheetData: String, apiKey: String, year: Int): String =
+private suspend fun askBoardingAssistant(question: String, sheetData: String, apiKey: String, year: Int): Pair<String, String> =
     withContext(Dispatchers.IO) {
         val today = SimpleDateFormat("d MMMM yyyy", Locale("ru")).format(Date())
 
@@ -615,7 +638,9 @@ $sheetData
 - Если спрашивают о свободных местах: свободные места — это значение столбца D напрямую. Выведи таблицу с колонками: Дата | День | Занято (C) | Свободно (D). Вывод делай на основе колонки D.
 - Если нет свободных мест, скажи об этом прямо и укажи, с какого дня освобождается место.
 - Если данных по запрошенному периоду нет в таблице, сообщи об этом.
-- Формат ответа: ТОЛЬКО HTML без тегов <html>/<head>/<body>. Используй <table><tr><th>/<td> для таблиц, <b> для ключевых данных (имена, числа, даты), <ul><li> для списков, <p> для абзацев. Не дублируй одно и то же в тексте и таблице одновременно."""
+- Формат ответа: JSON объект с двумя полями:
+  "html" — полный детальный ответ в HTML (без тегов html/head/body). Используй <table> для таблиц, <b> для ключевых данных, <ul><li> для списков, <p> для абзацев. Не дублируй данные одновременно в тексте и таблице.
+  "voice" — краткий голосовой комментарий 1–2 предложения без HTML-тегов, для озвучивания вслух."""
 
         val systemMsg = JSONObject().apply { put("role", "system"); put("content", systemPrompt) }
         val userMsg   = JSONObject().apply { put("role", "user");   put("content", question) }
@@ -625,6 +650,7 @@ $sheetData
             put("messages", messages)
             put("max_tokens", 1200)
             put("temperature", 0.2)
+            put("response_format", JSONObject().apply { put("type", "json_object") })
         }.toString()
 
         val conn = URL("https://api.openai.com/v1/chat/completions").openConnection() as HttpURLConnection
@@ -644,12 +670,16 @@ $sheetData
             throw Exception("OpenAI $code: $err")
         }
 
-        JSONObject(responseText)
+        val raw = JSONObject(responseText)
             .getJSONArray("choices")
             .getJSONObject(0)
             .getJSONObject("message")
             .getString("content")
             .trim()
+        val parsed = runCatching { JSONObject(raw) }.getOrNull()
+        val html  = parsed?.optString("html").takeIf { !it.isNullOrBlank() } ?: raw
+        val voice = parsed?.optString("voice") ?: ""
+        html to voice
     }
 
 private fun wrapInHtml(content: String): String = """<!DOCTYPE html>

@@ -21,7 +21,8 @@
       "Bash(magick identify *)",
       "Bash(./gradlew compileDebugKotlin)",
       "Bash(Get-ChildItem -Path \"D:\\\\Projects\\\\Android\\\\Clavim\\\\app\\\\src\\\\main\\\\java\\\\com\\\\dodisrael\\\\clavim\" -Recurse -File)",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(./gradlew assembleDebug --info)"
     ]
   }
 }
