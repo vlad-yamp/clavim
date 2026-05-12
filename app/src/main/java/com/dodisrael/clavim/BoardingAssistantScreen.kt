@@ -37,7 +37,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -91,6 +91,12 @@ private const val SHEET_CSV_URL =
     "https://docs.google.com/spreadsheets/d/1P44f7Fdk8_TiB6Rn67YLNbfnVHK7TIThMLsDiN6sgAs/export?format=csv&gid=0"
 private const val SHEET_XLSX_URL =
     "https://docs.google.com/spreadsheets/d/1P44f7Fdk8_TiB6Rn67YLNbfnVHK7TIThMLsDiN6sgAs/export?format=xlsx&gid=0"
+private const val CLIENTS_CSV_URL =
+    "https://docs.google.com/spreadsheets/d/1P44f7Fdk8_TiB6Rn67YLNbfnVHK7TIThMLsDiN6sgAs/export?format=csv&gid=1215152509"
+private const val TRAINING_CSV_URL =
+    "https://docs.google.com/spreadsheets/d/1k7usk6ZFkPL7x6-CFFfAr87kQvRkI9TBCZZqJFej0X4/export?format=csv&gid=0"
+
+private enum class TableType { BOARDING, CLIENTS, TRAINING }
 
 @Composable
 fun BoardingAssistantScreen(onBack: () -> Unit) {
@@ -161,20 +167,42 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
             answer = ""
             voiceComment = ""
             try {
-                loadingStatus = "Загружаю данные таблицы..."
-                val (csv, merges) = coroutineScope {
-                    val csvJob    = async { fetchSheetCsv() }
-                    val mergesJob = async { fetchSheetMerges() }
-                    csvJob.await() to mergesJob.await()
-                }
-                val year = Calendar.getInstance().get(Calendar.YEAR)
-                val csvRows     = csv.lines().filter { it.isNotBlank() }.map { parseCsvLine(it) }
-                val allRows     = buildGridWithMerges(csvRows, merges)
-                val filteredRows = filterRowsByDateWindow(allRows)
-                val sheetText   = filteredRows.joinToString("\n") { row -> row.joinToString(" | ") }
+                loadingStatus = "Определяю таблицу..."
+                val tableType = classifyQuestion(question, apiKey)
 
-                loadingStatus = "Спрашиваю ChatGPT..."
-                val (html, voice) = askBoardingAssistant(question, sheetText, apiKey, year)
+                val tableLabel = when (tableType) {
+                    TableType.BOARDING -> "Передержка"
+                    TableType.CLIENTS  -> "Список клиентов"
+                    TableType.TRAINING -> "Занятия с собаками"
+                }
+                loadingStatus = "Загружаю «$tableLabel»..."
+
+                val (html, voice) = when (tableType) {
+                    TableType.BOARDING -> {
+                        val (csv, merges) = coroutineScope {
+                            val csvJob    = async { fetchCsv(SHEET_CSV_URL) }
+                            val mergesJob = async { fetchSheetMerges() }
+                            csvJob.await() to mergesJob.await()
+                        }
+                        val year = Calendar.getInstance().get(Calendar.YEAR)
+                        val csvRows     = csv.lines().filter { it.isNotBlank() }.map { parseCsvLine(it) }
+                        val filteredRows = filterRowsByDateWindow(buildGridWithMerges(csvRows, merges))
+                        val sheetText   = filteredRows.joinToString("\n") { row -> row.joinToString(" | ") }
+                        loadingStatus = "Спрашиваю ChatGPT..."
+                        askBoardingAssistant(question, sheetText, apiKey, year)
+                    }
+                    TableType.CLIENTS -> {
+                        val csv = fetchCsv(CLIENTS_CSV_URL)
+                        loadingStatus = "Спрашиваю ChatGPT..."
+                        askTableAssistant(question, csv, "список клиентов и их собак (контакты, телефоны, породы, имена хозяев)", apiKey)
+                    }
+                    TableType.TRAINING -> {
+                        val csv = fetchCsv(TRAINING_CSV_URL)
+                        loadingStatus = "Спрашиваю ChatGPT..."
+                        askTableAssistant(question, csv, "расписание и журнал занятий по дрессировке собак", apiKey)
+                    }
+                }
+
                 answer = html
                 voiceComment = voice
 
@@ -431,7 +459,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                                     modifier = Modifier.size(44.dp)
                                 ) {
                                     Icon(
-                                        if (isSpeaking) Icons.Default.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                                        if (isSpeaking) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                                         contentDescription = "Прослушать",
                                         tint = if (isSpeaking) Color.White
                                                else if (voiceComment.isNotBlank()) accentColor
@@ -477,8 +505,8 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
     }
 }
 
-private suspend fun fetchSheetCsv(): String = withContext(Dispatchers.IO) {
-    val conn = URL(SHEET_CSV_URL).openConnection() as HttpURLConnection
+private suspend fun fetchCsv(url: String): String = withContext(Dispatchers.IO) {
+    val conn = URL(url).openConnection() as HttpURLConnection
     conn.connectTimeout = 15_000
     conn.readTimeout = 15_000
     try {
@@ -487,6 +515,96 @@ private suspend fun fetchSheetCsv(): String = withContext(Dispatchers.IO) {
     } finally {
         conn.disconnect()
     }
+}
+
+private suspend fun classifyQuestion(question: String, apiKey: String): TableType =
+    withContext(Dispatchers.IO) {
+        val systemPrompt = """Ты определяешь к какой таблице относится вопрос о бизнесе DogIsrael (дрессировка и передержка собак, Израиль).
+
+Таблицы:
+- BOARDING: передержка (кто на передержке, свободные места, даты заезда/выезда, бронирование мест)
+- CLIENTS: список клиентов (контакты, телефоны, имена хозяев, информация о собаках)
+- TRAINING: занятия и дрессировка (расписание занятий, посещаемость, тренировки, прогресс)
+
+Ответь ТОЛЬКО одним словом: BOARDING, CLIENTS или TRAINING."""
+
+        val systemMsg = JSONObject().apply { put("role", "system"); put("content", systemPrompt) }
+        val userMsg   = JSONObject().apply { put("role", "user");   put("content", question) }
+        val body = JSONObject().apply {
+            put("model", "gpt-4o-mini")
+            put("messages", JSONArray().apply { put(systemMsg); put(userMsg) })
+            put("max_tokens", 10)
+            put("temperature", 0.0)
+        }.toString()
+
+        val conn = URL("https://api.openai.com/v1/chat/completions").openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        conn.setRequestProperty("Authorization", "Bearer $apiKey")
+        conn.doOutput = true
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 15_000
+        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+
+        val code = conn.responseCode
+        if (code != 200) throw Exception("HTTP $code при определении таблицы")
+        val content = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).readText())
+            .getJSONArray("choices").getJSONObject(0)
+            .getJSONObject("message").getString("content")
+            .trim().uppercase()
+        when {
+            content.contains("CLIENTS")  -> TableType.CLIENTS
+            content.contains("TRAINING") -> TableType.TRAINING
+            else                         -> TableType.BOARDING
+        }
+    }
+
+private suspend fun askTableAssistant(
+    question: String, sheetData: String, tableDescription: String, apiKey: String
+): Pair<String, String> = withContext(Dispatchers.IO) {
+    val today = SimpleDateFormat("d MMMM yyyy", Locale("ru")).format(Date())
+    val systemPrompt = """Ты помощник службы DogIsrael (дрессировка и передержка собак, Израиль). Тебе предоставлены данные из Google Sheets: $tableDescription.
+Сегодня: $today.
+
+Данные таблицы (CSV):
+$sheetData
+
+Правила ответа:
+- Отвечай подробно и по существу, на русском языке.
+- Формат ответа: JSON объект с двумя полями:
+  "html" — полный детальный ответ в HTML (без тегов html/head/body). Используй <table> для таблиц, <b> для ключевых данных, <ul><li> для списков, <p> для абзацев.
+  "voice" — краткий голосовой комментарий 1–2 предложения без HTML-тегов, для озвучивания вслух."""
+
+    val systemMsg = JSONObject().apply { put("role", "system"); put("content", systemPrompt) }
+    val userMsg   = JSONObject().apply { put("role", "user");   put("content", question) }
+    val body = JSONObject().apply {
+        put("model", "gpt-4o")
+        put("messages", JSONArray().apply { put(systemMsg); put(userMsg) })
+        put("max_tokens", 1200)
+        put("temperature", 0.2)
+        put("response_format", JSONObject().apply { put("type", "json_object") })
+    }.toString()
+
+    val conn = URL("https://api.openai.com/v1/chat/completions").openConnection() as HttpURLConnection
+    conn.requestMethod = "POST"
+    conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+    conn.setRequestProperty("Authorization", "Bearer $apiKey")
+    conn.doOutput = true
+    conn.connectTimeout = 30_000
+    conn.readTimeout = 30_000
+    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+
+    val code = conn.responseCode
+    val responseText = if (code == 200) conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+    else throw Exception("OpenAI $code: ${conn.errorStream?.bufferedReader(Charsets.UTF_8)?.readText() ?: ""}")
+
+    val raw = JSONObject(responseText)
+        .getJSONArray("choices").getJSONObject(0)
+        .getJSONObject("message").getString("content").trim()
+    val parsed = runCatching { JSONObject(raw) }.getOrNull()
+    val html  = parsed?.optString("html").takeIf { !it.isNullOrBlank() } ?: raw
+    val voice = parsed?.optString("voice") ?: ""
+    html to voice
 }
 
 private fun parseCsvLine(line: String): MutableList<String> {
