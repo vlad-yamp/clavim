@@ -109,12 +109,14 @@ fun AppContent() {
             onTelegramFosteringClick = { screen = Screen.TELEGRAM_FOSTERING }
         )
         Screen.MAIN                -> MainMenuScreen(
-            onSheetsClick      = { screen = Screen.SHEETS },
-            onInfoClick        = { screen = Screen.INFO },
-            onAdvertisingClick = { screen = Screen.ADVERTISING },
-            onWhatsAppClick    = { screen = Screen.WHATSAPP },
-            onTelegramClick    = { screen = Screen.TELEGRAM },
-            onWebViewClick     = { url, title -> openWebView(url, title, Screen.MAIN) }
+            onSheetsClick              = { screen = Screen.SHEETS },
+            onInfoClick                = { screen = Screen.INFO },
+            onAdvertisingClick         = { screen = Screen.ADVERTISING },
+            onWhatsAppClick            = { screen = Screen.WHATSAPP },
+            onTelegramClick            = { screen = Screen.TELEGRAM },
+            onWebViewClick             = { url, title -> openWebView(url, title, Screen.MAIN) },
+            onBoardingAssistantClick   = { screen = Screen.BOARDING_ASSISTANT }
         )
+        Screen.BOARDING_ASSISTANT  -> BoardingAssistantScreen(onBack = { screen = Screen.MAIN })
     }
 }

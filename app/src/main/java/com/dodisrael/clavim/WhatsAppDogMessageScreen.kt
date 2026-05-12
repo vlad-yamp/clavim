@@ -645,7 +645,14 @@ fun WhatsAppDogMessageScreen(onBack: () -> Unit) {
 }
 
 @Composable
-fun OpenAiKeyDialog(currentKey: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+fun OpenAiKeyDialog(
+    currentKey: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+    title: String = "API ключ OpenAI",
+    hint: String = "Ключ начинается с sk-... Он сохраняется только на вашем устройстве.",
+    placeholder: String = "sk-..."
+) {
     var text by remember { mutableStateOf(currentKey) }
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -654,16 +661,12 @@ fun OpenAiKeyDialog(currentKey: String, onDismiss: () -> Unit, onSave: (String) 
             elevation = CardDefaults.cardElevation(8.dp)
         ) {
             Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("API ключ OpenAI", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Text(
-                    "Ключ начинается с sk-... Он сохраняется только на вашем устройстве.",
-                    fontSize = 13.sp,
-                    color = Color(0xFF757575)
-                )
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(hint, fontSize = 13.sp, color = Color(0xFF757575))
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    placeholder = { Text("sk-...") },
+                    placeholder = { Text(placeholder) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
