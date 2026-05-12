@@ -35,7 +35,8 @@ fun MainMenuScreen(
     onWhatsAppClick: () -> Unit,
     onTelegramClick: () -> Unit,
     onWebViewClick: (url: String, title: String) -> Unit,
-    onBoardingAssistantClick: () -> Unit
+    onBoardingAssistantClick: () -> Unit,
+    onSettingsClick: () -> Unit
 ) {
     val context = LocalContext.current
     val items = remember { buildMainMenuItems(onSheetsClick, onInfoClick, onAdvertisingClick, onWhatsAppClick, onTelegramClick, onWebViewClick, onBoardingAssistantClick) }
@@ -44,7 +45,8 @@ fun MainMenuScreen(
         AppHeader(
             title = "Clavim",
             subtitle = "Дрессировка и передержка собак · Израиль",
-            showBack = false
+            showBack = false,
+            onSettingsClick = onSettingsClick
         )
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
@@ -66,7 +68,7 @@ private fun buildMainMenuItems(
     onTelegramClick: () -> Unit,
     onWebViewClick: (url: String, title: String) -> Unit,
     onBoardingAssistantClick: () -> Unit
-): List<MenuItem> = listOf(
+): List<MenuItem> = listOf( // onSettingsClick handled via AppHeader gear icon
     MenuItem("Наш сайт", Icons.Default.Language, Color(0xFF1565C0)) { _ ->
         onWebViewClick("https://dogisrael.com", "Наш сайт")
     },

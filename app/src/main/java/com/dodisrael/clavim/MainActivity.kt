@@ -53,6 +53,7 @@ fun AppContent() {
             Screen.WHATSAPP_REMINDER, Screen.WHATSAPP_HOMEWORK, Screen.WHATSAPP_DOG_MESSAGE,
             Screen.WHATSAPP_TRANSLATION, Screen.WHATSAPP_PICKUP -> Screen.WHATSAPP
             Screen.WEB_VIEW -> webViewReturnScreen
+            Screen.SETTINGS -> Screen.MAIN
             else -> Screen.MAIN
         }
     }
@@ -108,6 +109,7 @@ fun AppContent() {
             onBack = { screen = Screen.MAIN },
             onTelegramFosteringClick = { screen = Screen.TELEGRAM_FOSTERING }
         )
+        Screen.SETTINGS            -> SettingsScreen(onBack = { screen = Screen.MAIN })
         Screen.MAIN                -> MainMenuScreen(
             onSheetsClick              = { screen = Screen.SHEETS },
             onInfoClick                = { screen = Screen.INFO },
@@ -115,7 +117,8 @@ fun AppContent() {
             onWhatsAppClick            = { screen = Screen.WHATSAPP },
             onTelegramClick            = { screen = Screen.TELEGRAM },
             onWebViewClick             = { url, title -> openWebView(url, title, Screen.MAIN) },
-            onBoardingAssistantClick   = { screen = Screen.BOARDING_ASSISTANT }
+            onBoardingAssistantClick   = { screen = Screen.BOARDING_ASSISTANT },
+            onSettingsClick            = { screen = Screen.SETTINGS }
         )
         Screen.BOARDING_ASSISTANT  -> BoardingAssistantScreen(onBack = { screen = Screen.MAIN })
     }

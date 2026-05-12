@@ -97,7 +97,6 @@ fun WhatsAppDogMessageScreen(onBack: () -> Unit) {
     var generateError by remember { mutableStateOf<String?>(null) }
     var clarification by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf(prefs.getString("openai_api_key", "") ?: "") }
-    var showApiKeyDialog by remember { mutableStateOf(false) }
     var generatedVariants by remember { mutableStateOf<List<String>>(emptyList()) }
     var showVariantsList by remember { mutableStateOf(false) }
 
@@ -169,7 +168,7 @@ fun WhatsAppDogMessageScreen(onBack: () -> Unit) {
     }
 
     fun doGenerate() {
-        if (apiKey.isBlank()) { showApiKeyDialog = true; return }
+        if (apiKey.isBlank()) { generateError = "API ключ не задан. Перейдите в Настройки."; return }
         scope.launch {
             isGenerating = true
             generateError = null
@@ -189,18 +188,6 @@ fun WhatsAppDogMessageScreen(onBack: () -> Unit) {
     }
 
     val canSend = generatedMessage.isNotBlank() && selectedContact != null
-
-    if (showApiKeyDialog) {
-        OpenAiKeyDialog(
-            currentKey = apiKey,
-            onDismiss = { showApiKeyDialog = false },
-            onSave = { key ->
-                apiKey = key
-                prefs.edit().putString("openai_api_key", key).apply()
-                showApiKeyDialog = false
-            }
-        )
-    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(title = "Сообщение владельцу", subtitle = "Генерация с ChatGPT", showBack = true, onBack = onBack)
@@ -310,27 +297,12 @@ fun WhatsAppDogMessageScreen(onBack: () -> Unit) {
                     colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
                     elevation = CardDefaults.cardElevation(0.dp)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            "API ключ OpenAI не задан",
-                            fontSize = 14.sp,
-                            color = Color(0xFFE65100),
-                            modifier = Modifier.weight(1f)
-                        )
-                        TextButton(onClick = { showApiKeyDialog = true }) { Text("Ввести ключ") }
-                    }
-                }
-            } else {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { showApiKeyDialog = true }) {
-                        Text("Изменить API ключ", fontSize = 12.sp, color = Color(0xFF9E9E9E))
-                    }
+                    Text(
+                        "API ключ не задан. Перейдите в Настройки.",
+                        fontSize = 14.sp,
+                        color = Color(0xFFE65100),
+                        modifier = Modifier.fillMaxWidth().padding(12.dp)
+                    )
                 }
             }
 

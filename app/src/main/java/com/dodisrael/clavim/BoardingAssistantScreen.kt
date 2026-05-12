@@ -105,7 +105,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
     val prefs = remember { context.getSharedPreferences("clavim_prefs", Context.MODE_PRIVATE) }
 
     var apiKey by remember { mutableStateOf(prefs.getString("openai_api_key", "") ?: "") }
-    var showApiKeyDialog by remember { mutableStateOf(false) }
+    val voiceAutoSpeak = remember { prefs.getBoolean("voice_auto_speak", true) }
 
     var question by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
@@ -159,7 +159,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
     }
 
     fun askQuestion() {
-        if (apiKey.isBlank()) { showApiKeyDialog = true; return }
+        if (apiKey.isBlank()) { errorText = "API ключ не задан. Перейдите в Настройки."; return }
         if (question.isBlank()) return
         scope.launch {
             isLoading = true
@@ -206,10 +206,8 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                 answer = html
                 voiceComment = voice
 
-                if (voice.isNotBlank()) {
-                    val plainLen = android.text.Html.fromHtml(html, android.text.Html.FROM_HTML_MODE_COMPACT)
-                        .toString().trim().length
-                    if (plainLen < 200) speak(voice)
+                if (voice.isNotBlank() && voiceAutoSpeak) {
+                    speak(voice)
                 }
             } catch (e: Exception) {
                 errorText = "Ошибка: ${e.message}"
@@ -226,7 +224,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                 question = spoken
                 answer = ""
                 errorText = ""
-                if (apiKey.isNotBlank()) askQuestion()
+                askQuestion()
             }
         }
     }
@@ -239,21 +237,6 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
         try { speechLauncher.launch(intent) } catch (_: ActivityNotFoundException) {}
-    }
-
-    if (showApiKeyDialog) {
-        OpenAiKeyDialog(
-            currentKey = apiKey,
-            onDismiss = { showApiKeyDialog = false },
-            onSave = { key ->
-                apiKey = key
-                prefs.edit().putString("openai_api_key", key).apply()
-                showApiKeyDialog = false
-            },
-            title = "API ключ OpenAI",
-            hint = "Ключ начинается с sk-... Он сохраняется только на вашем устройстве.",
-            placeholder = "sk-..."
-        )
     }
 
     val accentColor = Color(0xFF5E35B1)
@@ -285,19 +268,12 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                     colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
                     elevation = CardDefaults.cardElevation(0.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            "API ключ OpenAI не задан",
-                            fontSize = 14.sp,
-                            color = Color(0xFFE65100),
-                            modifier = Modifier.weight(1f)
-                        )
-                        TextButton(onClick = { showApiKeyDialog = true }) { Text("Ввести ключ") }
-                    }
+                    Text(
+                        "API ключ не задан. Перейдите в Настройки.",
+                        fontSize = 14.sp,
+                        color = Color(0xFFE65100),
+                        modifier = Modifier.fillMaxWidth().padding(12.dp)
+                    )
                 }
             }
 
@@ -495,12 +471,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(8.dp))
 
-            // API key management link
-            if (apiKey.isNotBlank()) {
-                TextButton(onClick = { showApiKeyDialog = true }) {
-                    Text("Изменить API ключ OpenAI", fontSize = 12.sp, color = Color(0xFFBDBDBD))
-                }
-            }
+
         }
     }
 }

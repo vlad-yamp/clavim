@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -48,7 +49,8 @@ fun AppHeader(
     title: String,
     subtitle: String,
     showBack: Boolean,
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    onSettingsClick: (() -> Unit)? = null
 ) {
     Box(
         modifier = Modifier
@@ -69,6 +71,18 @@ fun AppHeader(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Назад",
                     tint = Color.White
+                )
+            }
+        }
+        if (!showBack && onSettingsClick != null) {
+            IconButton(
+                onClick = onSettingsClick,
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Настройки",
+                    tint = Color.White.copy(alpha = 0.85f)
                 )
             }
         }
