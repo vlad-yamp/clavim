@@ -398,6 +398,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                                     isScrollContainer = false
                                     overScrollMode = View.OVER_SCROLL_NEVER
                                     settings.javaScriptEnabled = true
+                                    settings.domStorageEnabled = true
                                     settings.defaultFontSize = 15
                                     settings.defaultTextEncodingName = "UTF-8"
                                     webViewClient = object : WebViewClient() {
@@ -413,7 +414,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                                 }
                             },
                             update = { wv ->
-                                wv.loadDataWithBaseURL(null, wrapInHtml(answer), "text/html", "UTF-8", null)
+                                wv.loadDataWithBaseURL("https://cdn.jsdelivr.net", wrapInHtml(answer), "text/html", "UTF-8", null)
                             },
                             modifier = Modifier.fillMaxWidth().height(answerWebViewHeight)
                         )
@@ -543,6 +544,7 @@ $sheetData
 Правила ответа:
 - Отвечай подробно и по существу, на русском языке.
 - Формат ответа: JSON объект с двумя полями:
+- Если пользователь просит диаграмму или график: ты МОЖЕШЬ это сделать! Ответ отображается в WebView с JavaScript. Подключи Chart.js тегом <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>, добавь <canvas id="chart1"></canvas> и скрипт инициализации. Тип: 'bar' — столбиковая, 'pie' — круговая, 'doughnut' — кольцевая. Никогда не отказывай в построении диаграммы.
   "html" — полный детальный ответ в HTML (без тегов html/head/body). Используй <table> для таблиц, <b> для ключевых данных, <ul><li> для списков, <p> для абзацев.
   "voice" — краткий голосовой комментарий 1–2 предложения без HTML-тегов, для озвучивания вслух."""
 
@@ -727,6 +729,7 @@ $sheetData
 - Если спрашивают о свободных местах: свободные места — это значение столбца D напрямую. Выведи таблицу с колонками: Дата | День | Занято (C) | Свободно (D). Вывод делай на основе колонки D.
 - Если нет свободных мест, скажи об этом прямо и укажи, с какого дня освобождается место.
 - Если данных по запрошенному периоду нет в таблице, сообщи об этом.
+- Если пользователь просит диаграмму или график: ты МОЖЕШЬ это сделать! Ответ отображается в WebView с JavaScript. Подключи Chart.js тегом <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>, добавь <canvas id="chart1"></canvas> и скрипт инициализации. Тип: 'bar' — столбиковая, 'pie' — круговая, 'doughnut' — кольцевая. Никогда не отказывай в построении диаграммы.
 - Формат ответа: JSON объект с двумя полями:
   "html" — полный детальный ответ в HTML (без тегов html/head/body). Используй <table> для таблиц, <b> для ключевых данных, <ul><li> для списков, <p> для абзацев. Не дублируй данные одновременно в тексте и таблице.
   "voice" — краткий голосовой комментарий 1–2 предложения без HTML-тегов, для озвучивания вслух."""
