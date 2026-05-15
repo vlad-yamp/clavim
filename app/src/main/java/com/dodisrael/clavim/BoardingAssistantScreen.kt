@@ -188,7 +188,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                             FosteringDatabase.get(context).dao().search(name)
                         }
                         loadingStatus = "Фильтрую через AI..."
-                        val posts = filterFosteringPosts(raw, apiKey)
+                        val posts = filterFosteringPosts(raw, apiKey, name)
                         if (posts.isEmpty()) {
                             "<p>Фото с именем <b>«$name»</b> не найдены в базе канала.</p>" +
                             "<p>Попробуйте обновить базу в разделе «Фото передержек».</p>" to ""

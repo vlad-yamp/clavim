@@ -56,7 +56,11 @@ private data class ParsedPost(val id: Long, val photoUrls: List<String>, val cap
 
 // Sends captions to GPT and returns only posts confirmed to be about pet boarding.
 // If apiKey is blank or on any error — returns the original list unchanged.
-suspend fun filterFosteringPosts(posts: List<FosteringPost>, apiKey: String): List<FosteringPost> {
+suspend fun filterFosteringPosts(
+    posts: List<FosteringPost>,
+    apiKey: String,
+    dogName: String = ""
+): List<FosteringPost> {
     if (apiKey.isBlank() || posts.isEmpty()) return posts
     return withContext(Dispatchers.IO) {
         try {
@@ -64,12 +68,19 @@ suspend fun filterFosteringPosts(posts: List<FosteringPost>, apiKey: String): Li
                 "${i + 1}: ${p.caption.take(300).ifBlank { "(без текста)" }}"
             }.joinToString("\n")
 
-            val userPrompt = """Посты из Telegram-канала о собаках. Определи, какие из них ТОЧНО относятся к передержке или пансиону конкретной собаки (пост о пребывании собаки на передержке/пансионе). Не включай: просто фотографии без контекста, объявления о потере, продаже, вязке, дрессировке.
+            val nameCondition = if (dogName.isNotBlank())
+                "\n- В посте упоминается собака с именем «$dogName» именно как имя собаки (не как часть другого слова, например «потом» или «автоматически»)"
+            else ""
+
+            val userPrompt = """Посты из Telegram-канала о собаках. Определи, какие из них ТОЧНО соответствуют ВСЕМ условиям:
+- Относятся к передержке или пансиону конкретной собаки (пост о пребывании собаки на передержке/пансионе)$nameCondition
+
+Не включай: просто фото без контекста, объявления о потере, продаже, вязке, дрессировке, посты где имя встречается случайно как часть другого слова.
 
 Посты:
 $numbered
 
-Ответь ТОЛЬКО номерами постов через запятую, которые о передержке. Если все — напиши: все. Если ни один — напиши: нет."""
+Ответь ТОЛЬКО номерами постов через запятую. Если все подходят — напиши: все. Если ни один — напиши: нет."""
 
             val body = JSONObject().apply {
                 put("model", "gpt-4o-mini")

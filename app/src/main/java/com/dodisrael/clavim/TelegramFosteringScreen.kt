@@ -123,7 +123,7 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
             val raw = withContext(Dispatchers.IO) {
                 FosteringDatabase.get(context).dao().search(query.trim())
             }
-            val filtered = filterFosteringPosts(raw, apiKey)
+            val filtered = filterFosteringPosts(raw, apiKey, query.trim())
             searchResults = filtered
             isSearching = false
         }
