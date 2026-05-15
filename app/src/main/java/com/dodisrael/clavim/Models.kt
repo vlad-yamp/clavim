@@ -28,18 +28,12 @@ data class RateHistory(
 data class FosteringPost(val photoUrl: String, val caption: String)
 data class WhatsAppContact(val name: String, val phone: String)
 
+
 data class TranslationMessage(
     val isIncoming: Boolean,
     val originalText: String,
     val translatedText: String
 )
-
-sealed class FosteringState {
-    object Idle : FosteringState()
-    object Loading : FosteringState()
-    data class Success(val posts: List<FosteringPost>) : FosteringState()
-    data class Error(val message: String) : FosteringState()
-}
 
 sealed class RatesState {
     object Loading : RatesState()

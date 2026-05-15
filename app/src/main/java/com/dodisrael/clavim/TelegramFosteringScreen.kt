@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -20,23 +22,24 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -59,31 +62,51 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
 
-private const val DEFAULT_MAX_PAGES = 100
+private sealed class SyncState {
+    object Checking : SyncState()
+    object Empty : SyncState()
+    data class Syncing(val page: Int, val incremental: Boolean) : SyncState()
+    data class Ready(val count: Int) : SyncState()
+    data class SyncError(val message: String) : SyncState()
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TelegramFosteringScreen(onBack: () -> Unit) {
-    var query by remember { mutableStateOf("") }
-    var maxPages by remember { mutableIntStateOf(DEFAULT_MAX_PAGES) }
-    var state by remember { mutableStateOf<FosteringState>(FosteringState.Idle) }
-    var loadingPage by remember { mutableIntStateOf(0) }
-    var loadingTotal by remember { mutableIntStateOf(DEFAULT_MAX_PAGES) }
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
 
-    val doSearch: () -> Unit = {
-        if (query.isNotBlank()) {
-            keyboard?.hide()
-            loadingTotal = maxPages
-            state = FosteringState.Loading
-            loadingPage = 0
-            scope.launch {
-                state = fetchFosteringPhotos(query.trim(), maxPages) { page -> loadingPage = page }
+    var syncState by remember { mutableStateOf<SyncState>(SyncState.Checking) }
+    var query by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<FosteringPost>?>(null) }
+
+    LaunchedEffect(Unit) {
+        val count = withContext(Dispatchers.IO) { FosteringDatabase.get(context).dao().countPosts() }
+        syncState = if (count == 0) SyncState.Empty else SyncState.Ready(count)
+    }
+
+    fun startSync(incremental: Boolean) {
+        syncState = SyncState.Syncing(0, incremental)
+        searchResults = null
+        scope.launch {
+            val error = syncFosteringChannel(context, incremental) { page ->
+                syncState = SyncState.Syncing(page, incremental)
             }
+            val count = withContext(Dispatchers.IO) { FosteringDatabase.get(context).dao().countPosts() }
+            syncState = if (error != null) SyncState.SyncError(error) else SyncState.Ready(count)
+        }
+    }
+
+    fun doSearch() {
+        if (query.isBlank()) return
+        keyboard?.hide()
+        scope.launch {
+            val results = withContext(Dispatchers.IO) {
+                FosteringDatabase.get(context).dao().search(query.trim())
+            }
+            searchResults = results
         }
     }
 
@@ -94,196 +117,228 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
             showBack = true,
             onBack = onBack
         )
-        Column(
+
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.navigationBars)
         ) {
-            // Поисковая строка
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = { Text("Имя собаки") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { doSearch() }),
-                    trailingIcon = {
-                        if (query.isNotEmpty()) {
-                            IconButton(onClick = { query = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Очистить")
-                            }
-                        }
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-                Button(
-                    onClick = doSearch,
-                    enabled = query.isNotBlank() && state !is FosteringState.Loading,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF039BE5))
-                ) {
-                    Icon(Icons.Default.Search, contentDescription = "Найти", tint = Color.White)
+            when (val s = syncState) {
+                is SyncState.Checking -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color(0xFF039BE5))
                 }
-            }
 
-            // Настройка глубины поиска
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 0.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Глубина поиска (страниц):",
-                    fontSize = 13.sp,
-                    color = Color(0xFF757575),
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    onClick = { if (maxPages > 50) maxPages -= 50 },
-                    enabled = maxPages > 50
+                is SyncState.Empty -> Column(
+                    modifier = Modifier.fillMaxSize().padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    Icon(Icons.Default.Remove, contentDescription = "Меньше", tint = Color(0xFF039BE5))
-                }
-                Text(
-                    text = maxPages.toString(),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF1C1B1F),
-                    modifier = Modifier.width(40.dp),
-                    textAlign = TextAlign.Center
-                )
-                IconButton(
-                    onClick = { if (maxPages < 500) maxPages += 50 },
-                    enabled = maxPages < 500
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Больше", tint = Color(0xFF039BE5))
-                }
-            }
-
-            Spacer(Modifier.height(4.dp))
-
-            when (val s = state) {
-                is FosteringState.Idle -> Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "Введите имя собаки и нажмите 🔍",
-                        color = Color(0xFF9E9E9E),
-                        fontSize = 15.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(32.dp)
+                    Icon(
+                        Icons.Default.Download,
+                        contentDescription = null,
+                        tint = Color(0xFF039BE5),
+                        modifier = Modifier.size(64.dp)
                     )
-                }
-
-                is FosteringState.Loading -> {
-                    val progress = if (loadingTotal > 0) loadingPage.toFloat() / loadingTotal else 0f
-                    val percent = (progress * 100).toInt()
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                    Spacer(Modifier.height(16.dp))
+                    Text("Канал не загружен", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Загрузите канал один раз — дальше поиск будет мгновенным",
+                        fontSize = 14.sp,
+                        color = Color(0xFF757575),
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(24.dp))
+                    Button(
+                        onClick = { startSync(false) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF039BE5))
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.padding(horizontal = 32.dp)
-                        ) {
-                            Text(
-                                text = "Поиск...",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFF424242)
-                            )
-                            LinearProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier.fillMaxWidth(),
-                                color = Color(0xFF039BE5),
-                                trackColor = Color(0xFFBBDEFB)
-                            )
-                            Text(
-                                text = "Страница $loadingPage из $loadingTotal · $percent%",
-                                color = Color(0xFF757575),
-                                fontSize = 13.sp
-                            )
-                        }
+                        Icon(Icons.Default.Download, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Загрузить канал")
                     }
                 }
 
-                is FosteringState.Error -> Box(
-                    modifier = Modifier.fillMaxSize(),
+                is SyncState.Syncing -> Box(
+                    modifier = Modifier.fillMaxSize().padding(32.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = s.message,
-                        color = Color(0xFFB00020),
-                        textAlign = TextAlign.Center,
-                        fontSize = 15.sp,
-                        modifier = Modifier.padding(24.dp)
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF039BE5))
+                        Text(
+                            if (s.incremental) "Обновление..." else "Загрузка канала...",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF424242)
+                        )
+                        Text("Страница ${s.page}", color = Color(0xFF757575), fontSize = 13.sp)
+                    }
                 }
 
-                is FosteringState.Success -> key(s.posts) {
-                    val pagerState = rememberPagerState { s.posts.size }
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        Text(
-                            text = "${pagerState.currentPage + 1} / ${s.posts.size}",
-                            modifier = Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .padding(vertical = 4.dp),
-                            fontSize = 13.sp,
-                            color = Color(0xFF9E9E9E)
-                        )
-                        HorizontalPager(
-                            state = pagerState,
-                            modifier = Modifier.fillMaxSize()
-                        ) { page ->
-                            val post = s.posts[page]
-                            val ctx = LocalContext.current
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(ctx)
-                                        .data(post.photoUrl)
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = "Фото передержки",
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(12.dp)),
-                                    contentScale = ContentScale.Fit
-                                )
-                                if (post.caption.isNotBlank()) {
-                                    Spacer(Modifier.height(8.dp))
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                                        elevation = CardDefaults.cardElevation(2.dp)
-                                    ) {
-                                        Text(
-                                            text = post.caption,
-                                            modifier = Modifier.padding(12.dp),
-                                            fontSize = 13.sp,
-                                            color = Color(0xFF1C1B1F),
-                                            maxLines = 5,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
+                is SyncState.SyncError -> Column(
+                    modifier = Modifier.fillMaxSize().padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(s.message, color = Color(0xFFB00020), textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(16.dp))
+                    Button(
+                        onClick = { startSync(false) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF039BE5))
+                    ) {
+                        Text("Попробовать снова")
+                    }
+                }
+
+                is SyncState.Ready -> Column(modifier = Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            placeholder = { Text("Имя собаки") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { doSearch() }),
+                            trailingIcon = {
+                                if (query.isNotEmpty()) {
+                                    IconButton(onClick = { query = ""; searchResults = null }) {
+                                        Icon(Icons.Default.Clear, contentDescription = "Очистить")
                                     }
                                 }
-                                Spacer(Modifier.height(4.dp))
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = ::doSearch,
+                            enabled = query.isNotBlank(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF039BE5))
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = "Найти", tint = Color.White)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "${s.count} постов в базе",
+                            fontSize = 12.sp,
+                            color = Color(0xFF9E9E9E),
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = { startSync(true) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = Color(0xFF039BE5)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("Обновить", fontSize = 12.sp, color = Color(0xFF039BE5))
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    val results = searchResults
+                    when {
+                        results == null -> Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Введите имя собаки и нажмите 🔍",
+                                color = Color(0xFF9E9E9E),
+                                fontSize = 15.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(32.dp)
+                            )
+                        }
+
+                        results.isEmpty() -> Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Фото с «$query» не найдены",
+                                color = Color(0xFF9E9E9E),
+                                fontSize = 15.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(32.dp)
+                            )
+                        }
+
+                        else -> key(results) {
+                            val pagerState = rememberPagerState { results.size }
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                Text(
+                                    text = "${pagerState.currentPage + 1} / ${results.size}",
+                                    modifier = Modifier
+                                        .align(Alignment.CenterHorizontally)
+                                        .padding(vertical = 4.dp),
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF9E9E9E)
+                                )
+                                HorizontalPager(
+                                    state = pagerState,
+                                    modifier = Modifier.fillMaxSize()
+                                ) { page ->
+                                    val post = results[page]
+                                    val ctx = LocalContext.current
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        AsyncImage(
+                                            model = ImageRequest.Builder(ctx)
+                                                .data(post.photoUrl)
+                                                .crossfade(true)
+                                                .build(),
+                                            contentDescription = "Фото передержки",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(12.dp)),
+                                            contentScale = ContentScale.Fit
+                                        )
+                                        if (post.caption.isNotBlank()) {
+                                            Spacer(Modifier.height(8.dp))
+                                            Card(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(12.dp),
+                                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                                elevation = CardDefaults.cardElevation(2.dp)
+                                            ) {
+                                                Text(
+                                                    text = post.caption,
+                                                    modifier = Modifier.padding(12.dp),
+                                                    fontSize = 13.sp,
+                                                    color = Color(0xFF1C1B1F),
+                                                    maxLines = 5,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                    }
+                                }
                             }
                         }
                     }
@@ -291,82 +346,4 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
             }
         }
     }
-}
-
-private suspend fun fetchFosteringPhotos(
-    query: String,
-    maxPages: Int,
-    onProgress: (Int) -> Unit
-): FosteringState {
-    return withContext(Dispatchers.IO) {
-        try {
-            val allPosts = mutableListOf<FosteringPost>()
-            val seen = mutableSetOf<String>()
-            val photoRegex = Regex(
-                """tgme_widget_message_photo(?!_user)[^"]*"[^>]*background-image:url\('([^']+)'\)"""
-            )
-            val textRegex = Regex("""js-message_text[^>]*>(.*?)</div>""", RegexOption.DOT_MATCHES_ALL)
-            val htmlTagRegex = Regex("<[^>]+>")
-            val msgIdRegex = Regex("""data-post="[^/]*/(\d+)"""")
-
-            var beforeId: String? = null
-            var fetchedAnyPage = false
-
-            for (page in 0 until maxPages) {
-                onProgress(page + 1)
-                val urlStr = "https://t.me/s/DogIsraelTsafon" +
-                    (beforeId?.let { "?before=$it" } ?: "")
-                val html = fetchHtml(urlStr) ?: break
-                fetchedAnyPage = true
-
-                val newBefore = msgIdRegex.findAll(html)
-                    .mapNotNull { it.groupValues[1].toLongOrNull() }
-                    .minOrNull()?.toString()
-
-                html.split("js-widget_message_wrap").drop(1).forEach { block ->
-                    val photoUrls = photoRegex.findAll(block).map { it.groupValues[1] }.toList()
-                    if (photoUrls.isEmpty()) return@forEach
-
-                    val rawText = textRegex.find(block)?.groupValues?.get(1) ?: ""
-                    val text = rawText
-                        .replace(htmlTagRegex, " ")
-                        .replace("&amp;", "&").replace("&lt;", "<")
-                        .replace("&gt;", ">").replace("&nbsp;", " ").replace("&#39;", "'")
-                        .replace(Regex("\\s+"), " ").trim()
-
-                    if (text.contains(query, ignoreCase = true)) {
-                        photoUrls.forEach { url ->
-                            if (seen.add(url)) allPosts.add(FosteringPost(url, text))
-                        }
-                    }
-                }
-
-                if (newBefore == null || newBefore == beforeId) break
-                beforeId = newBefore
-            }
-
-            when {
-                !fetchedAnyPage -> FosteringState.Error("Нет соединения с интернетом")
-                allPosts.isEmpty() -> FosteringState.Error("Фото с именем «$query» не найдены")
-                else -> FosteringState.Success(allPosts)
-            }
-        } catch (e: Exception) {
-            FosteringState.Error("Ошибка: ${e.message ?: "Нет соединения"}")
-        }
-    }
-}
-
-private fun fetchHtml(url: String): String? {
-    return try {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 10_000
-        conn.readTimeout = 10_000
-        conn.instanceFollowRedirects = true
-        conn.setRequestProperty(
-            "User-Agent",
-            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/121.0.0.0 Mobile Safari/537.36"
-        )
-        if (conn.responseCode != HttpURLConnection.HTTP_OK) return null
-        conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-    } catch (_: Exception) { null }
 }
