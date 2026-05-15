@@ -83,6 +83,7 @@ import java.util.Date
 import java.util.Locale
 import android.graphics.Color as AndroidColor
 import android.view.View
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.ui.viewinterop.AndroidView
@@ -115,6 +116,8 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
     var isSpeaking by remember { mutableStateOf(false) }
     var voiceComment by remember { mutableStateOf("") }
     var answerWebViewHeight by remember { mutableStateOf(100.dp) }
+    var fullScreenPhotoIndex by remember { mutableStateOf<Int?>(null) }
+    var galleryUrls by remember { mutableStateOf<List<String>>(emptyList()) }
 
     // TextToSpeech lifecycle
     val ttsHolder = remember { mutableStateOf<TextToSpeech?>(null) }
@@ -166,6 +169,8 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
             errorText = ""
             answer = ""
             voiceComment = ""
+            galleryUrls = emptyList()
+            fullScreenPhotoIndex = null
             try {
                 loadingStatus = "Определяю категорию..."
                 val (tableType, dogName) = classifyQuestion(question, apiKey)
@@ -194,6 +199,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                             "<p>Попробуйте обновить базу в разделе «Фото передержек».</p>" to ""
                         } else {
                             answerWebViewHeight = maxOf(200.dp, (posts.size * 280).dp)
+                            galleryUrls = posts.map { it.photoUrl }
                             buildPhotoGalleryHtml(posts, name) to ""
                         }
                     }
@@ -256,6 +262,16 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
         try { speechLauncher.launch(intent) } catch (_: ActivityNotFoundException) {}
+    }
+
+    fullScreenPhotoIndex?.let { idx ->
+        if (galleryUrls.isNotEmpty()) {
+            FullScreenPhotoViewer(
+                photos = galleryUrls,
+                initialIndex = idx,
+                onDismiss = { fullScreenPhotoIndex = null }
+            )
+        }
     }
 
     val accentColor = Color(0xFF5E35B1)
@@ -420,6 +436,15 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                                     settings.domStorageEnabled = true
                                     settings.defaultFontSize = 15
                                     settings.defaultTextEncodingName = "UTF-8"
+                                    addJavascriptInterface(object : Any() {
+                                        @JavascriptInterface
+                                        fun onImageClick(url: String) {
+                                            Handler(Looper.getMainLooper()).post {
+                                                val idx = galleryUrls.indexOf(url).coerceAtLeast(0)
+                                                fullScreenPhotoIndex = idx
+                                            }
+                                        }
+                                    }, "Android")
                                     webViewClient = object : WebViewClient() {
                                         override fun onPageFinished(view: WebView, url: String) {
                                             view.evaluateJavascript(
@@ -805,13 +830,20 @@ private fun buildPhotoGalleryHtml(posts: List<FosteringPost>, dogName: String): 
     sb.append("</h3>")
     for (post in posts) {
         sb.append("<div style='margin-bottom:14px;border-radius:12px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.12)'>")
-        sb.append("<div style='height:220px;background:#f0f0f0;overflow:hidden'>")
-        sb.append("<img src='${post.photoUrl}' style='width:100%;height:100%;object-fit:contain' loading='lazy'>")
+        sb.append("<div style='height:250px;background:#f0f0f0;overflow:hidden'>")
+        sb.append("<img src='${post.photoUrl}' style='width:100%;height:100%;object-fit:contain;cursor:pointer' loading='lazy' onclick='if(window.Android) Android.onImageClick(this.src)'>")
         sb.append("</div>")
-        if (post.caption.isNotBlank()) {
-            val caption = if (post.caption.length > 200) post.caption.take(200) + "…" else post.caption
+        if (post.caption.isNotBlank() || post.date.isNotBlank()) {
             sb.append("<div style='padding:8px 12px;font-size:13px;color:#424242;background:#fafafa;line-height:1.4'>")
-            sb.append(caption)
+            if (post.caption.isNotBlank()) {
+                val caption = if (post.caption.length > 200) post.caption.take(200) + "…" else post.caption
+                sb.append(caption)
+            }
+            if (post.date.isNotBlank()) {
+                sb.append("<div style='font-size:11px;color:#9E9E9E;margin-top:4px;text-align:right'>")
+                sb.append(post.date)
+                sb.append("</div>")
+            }
             sb.append("</div>")
         }
         sb.append("</div>")

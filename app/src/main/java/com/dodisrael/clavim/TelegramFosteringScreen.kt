@@ -1,6 +1,9 @@
 package com.dodisrael.clavim
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -24,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
@@ -31,6 +36,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -62,6 +68,9 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
+import androidx.compose.ui.window.Dialog
 
 private sealed class SyncState {
     object Checking : SyncState()
@@ -87,6 +96,8 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
     var searchResults by remember { mutableStateOf<List<FosteringPost>?>(null) }
     var isSearching by remember { mutableStateOf(false) }
     var isAutoSyncing by remember { mutableStateOf(false) }
+    var fullScreenPhotoIndex by remember { mutableStateOf<Int?>(null) }
+    var showDogPicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val count = withContext(Dispatchers.IO) { FosteringDatabase.get(context).dao().countPosts() }
@@ -127,6 +138,28 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
             searchResults = filtered
             isSearching = false
         }
+    }
+
+    fullScreenPhotoIndex?.let { idx ->
+        val photos = searchResults?.map { it.photoUrl } ?: emptyList()
+        if (photos.isNotEmpty()) {
+            FullScreenPhotoViewer(
+                photos = photos,
+                initialIndex = idx,
+                onDismiss = { fullScreenPhotoIndex = null }
+            )
+        }
+    }
+
+    if (showDogPicker) {
+        DogPickerDialog(
+            onSelect = { name ->
+                query = name
+                showDogPicker = false
+                doSearch()
+            },
+            onDismiss = { showDogPicker = false }
+        )
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -242,6 +275,12 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF039BE5))
                         ) {
                             Icon(Icons.Default.Search, contentDescription = "Найти", tint = Color.White)
+                        }
+                        Button(
+                            onClick = { showDogPicker = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF039BE5))
+                        ) {
+                            Icon(Icons.Default.Pets, contentDescription = "Список собак", tint = Color.White)
                         }
                     }
 
@@ -359,7 +398,8 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .weight(1f)
-                                                .clip(RoundedCornerShape(12.dp)),
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .clickable { fullScreenPhotoIndex = page },
                                             contentScale = ContentScale.Fit
                                         )
                                         if (post.caption.isNotBlank()) {
@@ -380,6 +420,15 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
                                                 )
                                             }
                                         }
+                                        if (post.date.isNotBlank()) {
+                                            Spacer(Modifier.height(4.dp))
+                                            Text(
+                                                text = post.date,
+                                                fontSize = 11.sp,
+                                                color = Color(0xFF9E9E9E),
+                                                modifier = Modifier.align(Alignment.End)
+                                            )
+                                        }
                                         Spacer(Modifier.height(4.dp))
                                     }
                                 }
@@ -390,4 +439,122 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun DogPickerDialog(onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+    var dogs by remember { mutableStateOf<List<String>?>(null) }
+    var filter by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        dogs = fetchDogNames()
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(8.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Выберите собаку", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                Spacer(Modifier.height(10.dp))
+                when {
+                    dogs == null -> Box(
+                        modifier = Modifier.fillMaxWidth().height(120.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF039BE5))
+                    }
+                    dogs!!.isEmpty() -> Text(
+                        "Не удалось загрузить список",
+                        color = Color(0xFF9E9E9E),
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(vertical = 24.dp)
+                    )
+                    else -> {
+                        val filtered = remember(filter, dogs) {
+                            val list = dogs!!
+                            if (filter.isBlank()) list else list.filter { it.contains(filter, ignoreCase = true) }
+                        }
+                        OutlinedTextField(
+                            value = filter,
+                            onValueChange = { filter = it },
+                            placeholder = { Text("Поиск") },
+                            singleLine = true,
+                            trailingIcon = {
+                                if (filter.isNotEmpty()) {
+                                    IconButton(onClick = { filter = "" }) {
+                                        Icon(Icons.Default.Clear, contentDescription = null)
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+                            items(filtered) { name ->
+                                Text(
+                                    text = name,
+                                    fontSize = 15.sp,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSelect(name) }
+                                        .padding(horizontal = 4.dp, vertical = 12.dp)
+                                )
+                                HorizontalDivider(color = Color(0xFFEEEEEE))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private const val CLIENTS_CSV_DOG_NAMES_URL =
+    "https://docs.google.com/spreadsheets/d/1P44f7Fdk8_TiB6Rn67YLNbfnVHK7TIThMLsDiN6sgAs/export?format=csv&gid=1215152509"
+
+private suspend fun fetchDogNames(): List<String> = withContext(Dispatchers.IO) {
+    try {
+        val conn = URL(CLIENTS_CSV_DOG_NAMES_URL).openConnection() as HttpURLConnection
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 15_000
+        try {
+            if (conn.responseCode != 200) return@withContext emptyList()
+            conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+                .lines()
+                .drop(1)
+                .mapNotNull { line ->
+                    val cols = parseDogNamesCsvLine(line)
+                    cols.getOrNull(3)?.trim()?.takeIf { it.isNotBlank() }
+                }
+                .distinct()
+                .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
+        } finally {
+            conn.disconnect()
+        }
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+private fun parseDogNamesCsvLine(line: String): List<String> {
+    val result = mutableListOf<String>()
+    val current = StringBuilder()
+    var inQuotes = false
+    var i = 0
+    while (i < line.length) {
+        val c = line[i]
+        when {
+            c == '"' && !inQuotes -> inQuotes = true
+            c == '"' && inQuotes && i + 1 < line.length && line[i + 1] == '"' -> { current.append('"'); i++ }
+            c == '"' && inQuotes -> inQuotes = false
+            c == ',' && !inQuotes -> { result.add(current.toString()); current.clear() }
+            else -> current.append(c)
+        }
+        i++
+    }
+    result.add(current.toString())
+    return result
 }

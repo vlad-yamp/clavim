@@ -8,6 +8,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 @Entity(
     tableName = "fostering_posts",
@@ -17,7 +19,8 @@ data class FosteringPostEntity(
     @PrimaryKey(autoGenerate = true) val rowId: Long = 0,
     val postId: Long,
     val photoUrl: String,
-    val caption: String
+    val caption: String,
+    val date: String = ""
 )
 
 @Dao
@@ -25,7 +28,7 @@ interface FosteringDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     fun insertAll(posts: List<FosteringPostEntity>)
 
-    @Query("SELECT photoUrl, caption FROM fostering_posts WHERE caption LIKE '%' || :query || '%' ORDER BY postId DESC")
+    @Query("SELECT photoUrl, caption, date FROM fostering_posts WHERE caption LIKE '%' || :query || '%' ORDER BY postId DESC")
     fun search(query: String): List<FosteringPost>
 
     @Query("SELECT MAX(postId) FROM fostering_posts")
@@ -35,7 +38,7 @@ interface FosteringDao {
     fun countPosts(): Int
 }
 
-@Database(entities = [FosteringPostEntity::class], version = 1, exportSchema = false)
+@Database(entities = [FosteringPostEntity::class], version = 2, exportSchema = false)
 abstract class FosteringDatabase : RoomDatabase() {
     abstract fun dao(): FosteringDao
 
@@ -47,12 +50,12 @@ abstract class FosteringDatabase : RoomDatabase() {
                 context.applicationContext,
                 FosteringDatabase::class.java,
                 "fostering_db"
-            ).build().also { INSTANCE = it }
+            ).fallbackToDestructiveMigration().build().also { INSTANCE = it }
         }
     }
 }
 
-private data class ParsedPost(val id: Long, val photoUrls: List<String>, val caption: String)
+private data class ParsedPost(val id: Long, val photoUrls: List<String>, val caption: String, val date: String = "")
 
 // Sends captions to GPT and returns only posts confirmed to be about pet boarding.
 // If apiKey is blank or on any error — returns the original list unchanged.
@@ -140,6 +143,8 @@ suspend fun syncFosteringChannel(
         val textRegex = Regex("""js-message_text[^>]*>(.*?)</div>""", RegexOption.DOT_MATCHES_ALL)
         val htmlTagRegex = Regex("<[^>]+>")
         val idRegex = Regex("""data-post="[^/]*/(\d+)"""")
+        val dateRegex = Regex("""datetime="(\d{4}-\d{2}-\d{2})""")
+        val displayDateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy")
 
         var beforeId: String? = null
         var page = 0
@@ -165,7 +170,11 @@ suspend fun syncFosteringChannel(
                     .replace("&amp;", "&").replace("&lt;", "<")
                     .replace("&gt;", ">").replace("&nbsp;", " ").replace("&#39;", "'")
                     .replace(Regex("\\s+"), " ").trim()
-                ParsedPost(id, photoUrls, text)
+                val isoDate = dateRegex.find(block)?.groupValues?.get(1) ?: ""
+                val displayDate = if (isoDate.isNotEmpty()) {
+                    try { LocalDate.parse(isoDate).format(displayDateFormatter) } catch (_: Exception) { isoDate }
+                } else ""
+                ParsedPost(id, photoUrls, text, displayDate)
             }
 
             if (posts.isEmpty()) break
@@ -176,7 +185,7 @@ suspend fun syncFosteringChannel(
             val toInsert = if (reachedOverlap) posts.filter { it.id > maxStoredId!! } else posts
             dao.insertAll(toInsert.flatMap { post ->
                 post.photoUrls.map { url ->
-                    FosteringPostEntity(postId = post.id, photoUrl = url, caption = post.caption)
+                    FosteringPostEntity(postId = post.id, photoUrl = url, caption = post.caption, date = post.date)
                 }
             })
 

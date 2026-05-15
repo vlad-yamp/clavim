@@ -25,7 +25,7 @@ data class RateHistory(
     val ilsRub: List<Double>
 )
 
-data class FosteringPost(val photoUrl: String, val caption: String)
+data class FosteringPost(val photoUrl: String, val caption: String, val date: String = "")
 data class WhatsAppContact(val name: String, val phone: String)
 
 
