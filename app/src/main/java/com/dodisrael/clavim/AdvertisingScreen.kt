@@ -51,8 +51,8 @@ private fun buildAdvertisingMenuItems(onWebViewClick: (url: String, title: Strin
         val launched = ctx.tryLaunchApp("com.facebook.adsmanager")
         if (!launched) ctx.openUrl("https://www.facebook.com/adsmanager")
     },
-    MenuItem("Тильда", Icons.Default.BarChart, Color(0xFF00897B)) { _ ->
-        onWebViewClick("https://stats.tilda.cc/projects/statistics/?projectid=7284816&from=sitesettings", "Тильда")
+    MenuItem("Тильда", Icons.Default.BarChart, Color(0xFF00897B)) { ctx ->
+        ctx.openUrl("https://stats.tilda.cc/projects/statistics/?projectid=7284816&from=sitesettings")
     },
     MenuItem("Места\nна передержке", Icons.Default.Bed, Color(0xFF37474F)) { ctx ->
         ctx.openUrl("https://docs.google.com/spreadsheets/d/e/2PACX-1vQid7xTSYIm4dvkLqAP9ewvl7Pq41CFAXDDGldLdVCSQEtpK8KSXTa6f-_MHP4Zt2ezLwVV-Se5BJoG/pubhtml?authuser=0&widget=true&headers=false#gid=0?&single=true")
