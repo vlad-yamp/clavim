@@ -96,7 +96,7 @@ private const val CLIENTS_CSV_URL =
 private const val TRAINING_CSV_URL =
     "https://docs.google.com/spreadsheets/d/1k7usk6ZFkPL7x6-CFFfAr87kQvRkI9TBCZZqJFej0X4/export?format=csv&gid=0"
 
-private enum class TableType { BOARDING, CLIENTS, TRAINING }
+private enum class TableType { BOARDING, CLIENTS, TRAINING, PHOTOS }
 
 @Composable
 fun BoardingAssistantScreen(onBack: () -> Unit) {
@@ -167,17 +167,36 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
             answer = ""
             voiceComment = ""
             try {
-                loadingStatus = "Определяю таблицу..."
-                val tableType = classifyQuestion(question, apiKey)
+                loadingStatus = "Определяю категорию..."
+                val (tableType, dogName) = classifyQuestion(question, apiKey)
 
                 val tableLabel = when (tableType) {
                     TableType.BOARDING -> "Передержка"
                     TableType.CLIENTS  -> "Список клиентов"
                     TableType.TRAINING -> "Занятия с собаками"
+                    TableType.PHOTOS   -> "Фото из канала"
                 }
                 loadingStatus = "Загружаю «$tableLabel»..."
 
                 val (html, voice) = when (tableType) {
+                    TableType.PHOTOS -> {
+                        val name = dogName ?: question
+                        loadingStatus = "Обновляю канал..."
+                        syncFosteringChannel(context, incremental = true, onProgress = {})
+                        loadingStatus = "Ищу фото «$name»..."
+                        val raw = withContext(Dispatchers.IO) {
+                            FosteringDatabase.get(context).dao().search(name)
+                        }
+                        loadingStatus = "Фильтрую через AI..."
+                        val posts = filterFosteringPosts(raw, apiKey)
+                        if (posts.isEmpty()) {
+                            "<p>Фото с именем <b>«$name»</b> не найдены в базе канала.</p>" +
+                            "<p>Попробуйте обновить базу в разделе «Фото передержек».</p>" to ""
+                        } else {
+                            answerWebViewHeight = maxOf(200.dp, (posts.size * 280).dp)
+                            buildPhotoGalleryHtml(posts, name) to ""
+                        }
+                    }
                     TableType.BOARDING -> {
                         val (csv, merges) = coroutineScope {
                             val csvJob    = async { fetchCsv(SHEET_CSV_URL) }
@@ -489,23 +508,26 @@ private suspend fun fetchCsv(url: String): String = withContext(Dispatchers.IO) 
     }
 }
 
-private suspend fun classifyQuestion(question: String, apiKey: String): TableType =
+private suspend fun classifyQuestion(question: String, apiKey: String): Pair<TableType, String?> =
     withContext(Dispatchers.IO) {
-        val systemPrompt = """Ты определяешь к какой таблице относится вопрос о бизнесе DogIsrael (дрессировка и передержка собак, Израиль).
+        val systemPrompt = """Ты определяешь к какой категории относится вопрос о бизнесе DogIsrael (дрессировка и передержка собак, Израиль).
 
-Таблицы:
+Категории:
 - BOARDING: передержка (кто на передержке, свободные места, даты заезда/выезда, бронирование мест)
 - CLIENTS: список клиентов (контакты, телефоны, имена хозяев, информация о собаках)
 - TRAINING: занятия и дрессировка (расписание занятий, посещаемость, тренировки, прогресс)
+- PHOTOS:<кличка>: запрос на показ фото собаки (покажи, хочу посмотреть фото, есть фото и т.п.)
 
-Ответь ТОЛЬКО одним словом: BOARDING, CLIENTS или TRAINING."""
+Если запрос про фото — извлеки кличку в именительном падеже и ответь PHOTOS:<кличка>
+Примеры: "покажи Ричарда" → PHOTOS:Ричард, "есть фото Бобика?" → PHOTOS:Бобик, "покажи мне Белку" → PHOTOS:Белка
+Иначе ответь ТОЛЬКО одним словом: BOARDING, CLIENTS или TRAINING."""
 
         val systemMsg = JSONObject().apply { put("role", "system"); put("content", systemPrompt) }
         val userMsg   = JSONObject().apply { put("role", "user");   put("content", question) }
         val body = JSONObject().apply {
             put("model", "gpt-4o-mini")
             put("messages", JSONArray().apply { put(systemMsg); put(userMsg) })
-            put("max_tokens", 10)
+            put("max_tokens", 20)
             put("temperature", 0.0)
         }.toString()
 
@@ -519,15 +541,17 @@ private suspend fun classifyQuestion(question: String, apiKey: String): TableTyp
         conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
 
         val code = conn.responseCode
-        if (code != 200) throw Exception("HTTP $code при определении таблицы")
+        if (code != 200) throw Exception("HTTP $code при определении категории")
         val content = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).readText())
             .getJSONArray("choices").getJSONObject(0)
             .getJSONObject("message").getString("content")
-            .trim().uppercase()
+            .trim()
         when {
-            content.contains("CLIENTS")  -> TableType.CLIENTS
-            content.contains("TRAINING") -> TableType.TRAINING
-            else                         -> TableType.BOARDING
+            content.startsWith("PHOTOS:", ignoreCase = true) ->
+                TableType.PHOTOS to content.substringAfter(":").trim()
+            content.contains("CLIENTS", ignoreCase = true)  -> TableType.CLIENTS to null
+            content.contains("TRAINING", ignoreCase = true) -> TableType.TRAINING to null
+            else                                             -> TableType.BOARDING to null
         }
     }
 
@@ -773,6 +797,27 @@ $sheetData
         val voice = parsed?.optString("voice") ?: ""
         html to voice
     }
+
+private fun buildPhotoGalleryHtml(posts: List<FosteringPost>, dogName: String): String {
+    val sb = StringBuilder()
+    sb.append("<h3 style='color:#5E35B1;margin:0 0 12px'>")
+    sb.append("Фото: $dogName (${posts.size})")
+    sb.append("</h3>")
+    for (post in posts) {
+        sb.append("<div style='margin-bottom:14px;border-radius:12px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.12)'>")
+        sb.append("<div style='height:220px;background:#f0f0f0;overflow:hidden'>")
+        sb.append("<img src='${post.photoUrl}' style='width:100%;height:100%;object-fit:contain' loading='lazy'>")
+        sb.append("</div>")
+        if (post.caption.isNotBlank()) {
+            val caption = if (post.caption.length > 200) post.caption.take(200) + "…" else post.caption
+            sb.append("<div style='padding:8px 12px;font-size:13px;color:#424242;background:#fafafa;line-height:1.4'>")
+            sb.append(caption)
+            sb.append("</div>")
+        }
+        sb.append("</div>")
+    }
+    return sb.toString()
+}
 
 private fun wrapInHtml(content: String): String = """<!DOCTYPE html>
 <html>

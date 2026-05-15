@@ -77,14 +77,29 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
+    val apiKey = remember {
+        context.getSharedPreferences("clavim_prefs", android.content.Context.MODE_PRIVATE)
+            .getString("openai_api_key", "") ?: ""
+    }
 
     var syncState by remember { mutableStateOf<SyncState>(SyncState.Checking) }
     var query by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<FosteringPost>?>(null) }
+    var isSearching by remember { mutableStateOf(false) }
+    var isAutoSyncing by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val count = withContext(Dispatchers.IO) { FosteringDatabase.get(context).dao().countPosts() }
-        syncState = if (count == 0) SyncState.Empty else SyncState.Ready(count)
+        if (count == 0) {
+            syncState = SyncState.Empty
+        } else {
+            syncState = SyncState.Ready(count)
+            isAutoSyncing = true
+            syncFosteringChannel(context, incremental = true, onProgress = {})
+            val newCount = withContext(Dispatchers.IO) { FosteringDatabase.get(context).dao().countPosts() }
+            syncState = SyncState.Ready(newCount)
+            isAutoSyncing = false
+        }
     }
 
     fun startSync(incremental: Boolean) {
@@ -102,11 +117,15 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
     fun doSearch() {
         if (query.isBlank()) return
         keyboard?.hide()
+        isSearching = true
+        searchResults = null
         scope.launch {
-            val results = withContext(Dispatchers.IO) {
+            val raw = withContext(Dispatchers.IO) {
                 FosteringDatabase.get(context).dao().search(query.trim())
             }
-            searchResults = results
+            val filtered = filterFosteringPosts(raw, apiKey)
+            searchResults = filtered
+            isSearching = false
         }
     }
 
@@ -235,9 +254,17 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
                         Text(
                             "${s.count} постов в базе",
                             fontSize = 12.sp,
-                            color = Color(0xFF9E9E9E),
-                            modifier = Modifier.weight(1f)
+                            color = Color(0xFF9E9E9E)
                         )
+                        if (isAutoSyncing) {
+                            Spacer(Modifier.width(6.dp))
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(10.dp),
+                                color = Color(0xFF039BE5),
+                                strokeWidth = 1.5.dp
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
                         TextButton(
                             onClick = { startSync(true) },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
@@ -257,6 +284,23 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
 
                     val results = searchResults
                     when {
+                        isSearching -> Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                CircularProgressIndicator(color = Color(0xFF039BE5))
+                                Text(
+                                    "Фильтрую через AI...",
+                                    color = Color(0xFF757575),
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+
                         results == null -> Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
