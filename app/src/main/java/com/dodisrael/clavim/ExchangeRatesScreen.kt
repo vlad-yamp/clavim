@@ -2,6 +2,7 @@ package com.dodisrael.clavim
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -9,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Launch
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,6 +38,7 @@ import java.util.Locale
 
 @Composable
 fun ExchangeRatesScreen(onBack: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val ratesState by produceState<RatesState>(initialValue = RatesState.Loading) {
         value = fetchExchangeRates()
     }
@@ -85,7 +88,8 @@ fun ExchangeRatesScreen(onBack: () -> Unit) {
                             current = state.usdRub,
                             history = state.history.usdRub,
                             labels = state.history.labels,
-                            chartColor = Color(0xFFF57C00)
+                            chartColor = Color(0xFFF57C00),
+                            onChartClick = { context.openUrl("https://www.google.com/finance/quote/USD-RUB") }
                         )
 
                         RateCard(
@@ -94,7 +98,8 @@ fun ExchangeRatesScreen(onBack: () -> Unit) {
                             current = state.usdIls,
                             history = state.history.usdIls,
                             labels = state.history.labels,
-                            chartColor = Color(0xFF1565C0)
+                            chartColor = Color(0xFF1565C0),
+                            onChartClick = { context.openUrl("https://www.google.com/finance/quote/USD-ILS") }
                         )
 
                         RateCard(
@@ -103,7 +108,8 @@ fun ExchangeRatesScreen(onBack: () -> Unit) {
                             current = state.ilsRub,
                             history = state.history.ilsRub,
                             labels = state.history.labels,
-                            chartColor = Color(0xFF00695C)
+                            chartColor = Color(0xFF00695C),
+                            onChartClick = { context.openUrl("https://www.google.com/finance/quote/ILS-RUB") }
                         )
                     }
                 }
@@ -287,7 +293,8 @@ private fun RateCard(
     current: Double,
     history: List<Double>,
     labels: List<String>,
-    chartColor: Color
+    chartColor: Color,
+    onChartClick: () -> Unit
 ) {
     val firstVal = history.firstOrNull()
     val changeText = if (firstVal != null && firstVal != 0.0) {
@@ -337,13 +344,29 @@ private fun RateCard(
 
             Spacer(Modifier.height(12.dp))
 
-            Sparkline(
-                values = history,
-                lineColor = chartColor,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(80.dp)
-            )
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onChartClick() }
+            ) {
+                Sparkline(
+                    values = history,
+                    lineColor = chartColor,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp)
+                )
+                Icon(
+                    Icons.Default.Launch,
+                    contentDescription = "Открыть в браузере",
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .size(14.dp),
+                    tint = chartColor.copy(alpha = 0.6f)
+                )
+            }
 
             if (labels.size >= 2) {
                 Spacer(Modifier.height(4.dp))
