@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
 import android.speech.RecognizerIntent
@@ -143,7 +144,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
     var shouldAutoLaunchMic by remember { mutableStateOf(false) }
     var bookingSuccess by remember { mutableStateOf(false) }
 
-    // TextToSpeech lifecycle
+    val mediaPlayerHolder = remember { mutableStateOf<MediaPlayer?>(null) }
     val ttsHolder = remember { mutableStateOf<TextToSpeech?>(null) }
     DisposableEffect(Unit) {
         val tts = TextToSpeech(context) { status ->
@@ -156,31 +157,87 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
         }
         ttsHolder.value = tts
         onDispose {
+            mediaPlayerHolder.value?.release()
+            mediaPlayerHolder.value = null
             tts.stop()
             tts.shutdown()
             ttsHolder.value = null
         }
     }
 
-    fun speak(text: String) {
+    fun speakWithTts(text: String) {
         val tts = ttsHolder.value ?: return
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(id: String?) {
-                Handler(Looper.getMainLooper()).post { isSpeaking = true }
-            }
-            override fun onDone(id: String?) {
-                Handler(Looper.getMainLooper()).post { isSpeaking = false }
-            }
+            override fun onStart(id: String?) { Handler(Looper.getMainLooper()).post { isSpeaking = true } }
+            override fun onDone(id: String?) { Handler(Looper.getMainLooper()).post { isSpeaking = false } }
             @Deprecated("Deprecated in Java")
-            override fun onError(id: String?) {
-                Handler(Looper.getMainLooper()).post { isSpeaking = false }
-            }
+            override fun onError(id: String?) { Handler(Looper.getMainLooper()).post { isSpeaking = false } }
         })
         val plain = android.text.Html.fromHtml(text, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
         tts.speak(plain, TextToSpeech.QUEUE_FLUSH, null, "boarding_answer")
     }
 
+    fun speak(text: String) {
+        if (text.isBlank()) return
+        mediaPlayerHolder.value?.release()
+        mediaPlayerHolder.value = null
+        ttsHolder.value?.stop()
+
+        if (apiKey.isBlank()) { speakWithTts(text); return }
+
+        scope.launch {
+            isSpeaking = true
+            val plain = android.text.Html.fromHtml(text, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
+            val bytes = withContext(Dispatchers.IO) {
+                try {
+                    val body = JSONObject().apply {
+                        put("model", "tts-1")
+                        put("input", plain)
+                        put("voice", "nova")
+                    }.toString()
+                    val conn = URL("https://api.openai.com/v1/audio/speech").openConnection() as HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.setRequestProperty("Authorization", "Bearer $apiKey")
+                    conn.doOutput = true
+                    conn.connectTimeout = 15_000
+                    conn.readTimeout = 30_000
+                    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                    if (conn.responseCode != 200) null else conn.inputStream.readBytes()
+                } catch (_: Exception) { null }
+            }
+            if (bytes != null) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        val file = java.io.File(context.cacheDir, "tts_voice.mp3")
+                        file.writeBytes(bytes)
+                        val player = MediaPlayer()
+                        player.setDataSource(file.absolutePath)
+                        player.setOnCompletionListener {
+                            Handler(Looper.getMainLooper()).post {
+                                isSpeaking = false
+                                player.release()
+                                if (mediaPlayerHolder.value == player) mediaPlayerHolder.value = null
+                            }
+                        }
+                        player.prepare()
+                        mediaPlayerHolder.value = player
+                        player.start()
+                    } catch (_: Exception) {
+                        withContext(Dispatchers.Main) { isSpeaking = false }
+                        speakWithTts(plain)
+                    }
+                }
+            } else {
+                speakWithTts(plain)
+            }
+        }
+    }
+
     fun stopSpeaking() {
+        mediaPlayerHolder.value?.stop()
+        mediaPlayerHolder.value?.release()
+        mediaPlayerHolder.value = null
         ttsHolder.value?.stop()
         isSpeaking = false
     }
