@@ -104,14 +104,16 @@ private data class ClassifyResult(
     val tableType: TableType,
     val dogName: String? = null,
     val startDate: String? = null,
-    val endDate: String? = null
+    val endDate: String? = null,
+    val action: String = "add"
 )
 
 private data class PendingBooking(
     val dogName: String,
     val startDate: String,
     val endDate: String,
-    val candidates: List<String>
+    val candidates: List<String>,
+    val action: String = "add"
 )
 
 @Composable
@@ -198,16 +200,22 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                         shouldAutoLaunchMic = true
                     } else {
                         pendingBooking = null
-                        loadingStatus = "Записываю в таблицу..."
+                        val isDelete = booking.action == "delete"
+                        loadingStatus = if (isDelete) "Удаляю из таблицы..." else "Записываю в таблицу..."
                         val webUrl = prefs.getString("apps_script_url", "") ?: ""
-                        val success = appendBookingToSheet(booking.startDate, booking.endDate, selected, webUrl)
+                        val success = appendBookingToSheet(booking.startDate, booking.endDate, selected, webUrl, booking.action)
                         val (html, voice) = if (success) {
                             bookingSuccess = true
-                            "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ Записано!</p>" +
-                            "<p>$selected</p>" +
-                            "<p>📅 с <b>${booking.startDate}</b> по <b>${booking.endDate}</b></p>" to "Записано!"
+                            if (isDelete)
+                                "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ Удалено!</p>" +
+                                "<p>$selected</p>" +
+                                "<p>📅 с <b>${booking.startDate}</b> по <b>${booking.endDate}</b></p>" to "Удалено!"
+                            else
+                                "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ Записано!</p>" +
+                                "<p>$selected</p>" +
+                                "<p>📅 с <b>${booking.startDate}</b> по <b>${booking.endDate}</b></p>" to "Записано!"
                         } else {
-                            "<p style='color:#D32F2F'>❌ Ошибка записи. Проверьте URL Apps Script в настройках.</p>" to ""
+                            "<p style='color:#D32F2F'>❌ Ошибка. Проверьте URL Apps Script в настройках.</p>" to ""
                         }
                         answer = html
                         voiceComment = voice
@@ -279,21 +287,27 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                                     "<p>Собака с кличкой <b>«$dogName»</b> не найдена в базе клиентов.</p>" to
                                     "Собака $dogName не найдена в базе"
                                 candidates.size == 1 -> {
-                                    loadingStatus = "Записываю в таблицу..."
+                                    val isDelete = result.action == "delete"
+                                    loadingStatus = if (isDelete) "Удаляю из таблицы..." else "Записываю в таблицу..."
                                     val webUrl = prefs.getString("apps_script_url", "") ?: ""
-                                    val success = appendBookingToSheet(startDate, endDate, candidates[0], webUrl)
+                                    val success = appendBookingToSheet(startDate, endDate, candidates[0], webUrl, result.action)
                                     if (success) {
                                         bookingSuccess = true
-                                        "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ Записано!</p>" +
-                                        "<p>${candidates[0]}</p>" +
-                                        "<p>📅 с <b>$startDate</b> по <b>$endDate</b></p>" to "Записано!"
+                                        if (isDelete)
+                                            "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ Удалено!</p>" +
+                                            "<p>${candidates[0]}</p>" +
+                                            "<p>📅 с <b>$startDate</b> по <b>$endDate</b></p>" to "Удалено!"
+                                        else
+                                            "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ Записано!</p>" +
+                                            "<p>${candidates[0]}</p>" +
+                                            "<p>📅 с <b>$startDate</b> по <b>$endDate</b></p>" to "Записано!"
                                     } else {
-                                        "<p style='color:#D32F2F'>❌ Ошибка записи. Проверьте URL Apps Script в настройках.</p>" to ""
+                                        "<p style='color:#D32F2F'>❌ Ошибка. Проверьте URL Apps Script в настройках.</p>" to ""
                                     }
                                 }
                                 else -> {
                                     val listHtml = candidates.joinToString("") { "<li>$it</li>" }
-                                    pendingBooking = PendingBooking(dogName, startDate, endDate, candidates)
+                                    pendingBooking = PendingBooking(dogName, startDate, endDate, candidates, result.action)
                                     shouldAutoLaunchMic = true
                                     "<p>Найдено <b>${candidates.size}</b> собаки с кличкой <b>«$dogName»</b>:</p>" +
                                     "<ul>$listHtml</ul>" +
@@ -672,7 +686,8 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
 - CLIENTS — вопрос про клиентов (контакты, телефоны, имена хозяев)
 - TRAINING — вопрос про занятия/дрессировку (расписание, посещаемость)
 - PHOTOS:<кличка> — запрос на показ фото собаки (покажи, хочу посмотреть)
-- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца> — ЗАПИСЬ собаки на передержку (ключевые слова: запиши, запишите, добавь запись, забронируй; никогда не путать с вопросами про текущую передержку)
+- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:add — ЗАПИСЬ собаки на передержку (ключевые слова: запиши, запишите, добавь, забронируй)
+- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:delete — УДАЛЕНИЕ с передержки (ключевые слова: удали, удалить, убери, сними, отмени)
 
 Для PHOTOS: кличка в именительном падеже.
 Для RECORD_BOOKING: кличка в именительном падеже, даты в формате ДД.ММ.ГГГГ.
@@ -680,8 +695,10 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
 
 Примеры:
 "покажи Ричарда" → PHOTOS:Ричард
-"запиши Мэри с 10 по 15 июня" → RECORD_BOOKING:Мэри:10.06.2026:15.06.2026
-"запишите Бобика на передержку с 1 по 5 марта" → RECORD_BOOKING:Бобик:01.03.2027:05.03.2027
+"запиши Мэри с 10 по 15 июня" → RECORD_BOOKING:Мэри:10.06.2026:15.06.2026:add
+"запишите Бобика на передержку с 1 по 5 марта" → RECORD_BOOKING:Бобик:01.03.2027:05.03.2027:add
+"удали Мэри с 10 по 15 июня" → RECORD_BOOKING:Мэри:10.06.2026:15.06.2026:delete
+"убери Бобика с передержки с 1 по 5 марта" → RECORD_BOOKING:Бобик:01.03.2027:05.03.2027:delete
 "кто на передержке сейчас" → BOARDING
 
 Ответь ТОЛЬКО в одном из указанных форматов, без пояснений."""
@@ -717,7 +734,8 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
                     tableType = TableType.RECORD_BOOKING,
                     dogName   = parts.getOrNull(1)?.trim(),
                     startDate = parts.getOrNull(2)?.trim(),
-                    endDate   = parts.getOrNull(3)?.trim()
+                    endDate   = parts.getOrNull(3)?.trim(),
+                    action    = if (parts.getOrNull(4)?.trim().equals("delete", ignoreCase = true)) "delete" else "add"
                 )
             }
             content.startsWith("PHOTOS:", ignoreCase = true) ->
@@ -1043,7 +1061,8 @@ private suspend fun appendBookingToSheet(
     startDate: String,
     endDate: String,
     info: String,
-    webAppUrl: String
+    webAppUrl: String,
+    action: String = "add"
 ): Boolean = withContext(Dispatchers.IO) {
     if (webAppUrl.isBlank()) return@withContext false
     try {
@@ -1053,6 +1072,7 @@ private suspend fun appendBookingToSheet(
             append("?startDate=").append(java.net.URLEncoder.encode(startDate, enc))
             append("&endDate=").append(java.net.URLEncoder.encode(endDate, enc))
             append("&info=").append(java.net.URLEncoder.encode(info, enc))
+            append("&action=").append(action)
         }
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 15_000
