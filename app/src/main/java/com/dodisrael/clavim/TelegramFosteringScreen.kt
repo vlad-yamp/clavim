@@ -317,6 +317,19 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
                             Spacer(Modifier.width(4.dp))
                             Text("Обновить", fontSize = 12.sp, color = Color(0xFF039BE5))
                         }
+                        TextButton(
+                            onClick = { startSync(false) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = Color(0xFF757575)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("Перезагрузить", fontSize = 12.sp, color = Color(0xFF757575))
+                        }
                     }
 
                     Spacer(Modifier.height(4.dp))

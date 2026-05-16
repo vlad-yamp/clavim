@@ -36,6 +36,9 @@ interface FosteringDao {
 
     @Query("SELECT COUNT(DISTINCT postId) FROM fostering_posts")
     fun countPosts(): Int
+
+    @Query("DELETE FROM fostering_posts")
+    fun clearAll()
 }
 
 @Database(entities = [FosteringPostEntity::class], version = 2, exportSchema = false)
@@ -135,6 +138,7 @@ suspend fun syncFosteringChannel(
 ): String? = withContext(Dispatchers.IO) {
     try {
         val dao = FosteringDatabase.get(context).dao()
+        if (!incremental) dao.clearAll()
         val maxStoredId: Long? = if (incremental) dao.getMaxPostId() else null
 
         val photoRegex = Regex(
