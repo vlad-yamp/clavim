@@ -39,6 +39,8 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -47,8 +49,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -363,7 +367,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                 question = spoken
                 answer = ""
                 errorText = ""
-                askQuestion()
+                // не вызываем askQuestion() — пользователь проверяет текст и жмёт «Выполнить»
             }
         }
     }
@@ -492,15 +496,22 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                     elevation = CardDefaults.cardElevation(0.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Ваш вопрос", fontSize = 12.sp, color = Color(0xFF7E57C2), fontWeight = FontWeight.SemiBold)
-                        Text(question, fontSize = 15.sp, color = Color(0xFF1C1B1F))
+                        Text("Проверьте и исправьте при необходимости", fontSize = 12.sp, color = Color(0xFF7E57C2), fontWeight = FontWeight.SemiBold)
+                        OutlinedTextField(
+                            value = question,
+                            onValueChange = { question = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 4,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { askQuestion() })
+                        )
                         if (answer.isBlank() && errorText.isBlank() && apiKey.isNotBlank()) {
                             Button(
                                 onClick = { askQuestion() },
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(containerColor = accentColor)
                             ) {
-                                Text("Спросить", color = Color.White)
+                                Text("Выполнить", color = Color.White)
                             }
                         }
                     }
