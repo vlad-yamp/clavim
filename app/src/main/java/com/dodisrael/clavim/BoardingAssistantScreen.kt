@@ -191,7 +191,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
 
         scope.launch {
             isSpeaking = true
-            val plain = android.text.Html.fromHtml(text, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
+            val plain = formatPhoneNumbers(android.text.Html.fromHtml(text, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim())
             val bytes = preloaded ?: withContext(Dispatchers.IO) { downloadTtsAudio(plain, apiKey) }
             if (bytes != null) {
                 withContext(Dispatchers.IO) {
@@ -267,7 +267,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                         }
                         if (voice.isNotBlank() && apiKey.isNotBlank() && voiceAutoSpeak) {
                             loadingStatus = "Подготовка голоса..."
-                            pendingTtsBytes.value = withContext(Dispatchers.IO) { downloadTtsAudio(voice.trim(), apiKey) }
+                            pendingTtsBytes.value = withContext(Dispatchers.IO) { downloadTtsAudio(formatPhoneNumbers(voice.trim()), apiKey) }
                         }
                         answer = html
                         voiceComment = voice
@@ -396,7 +396,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
 
                 if (voice.isNotBlank() && apiKey.isNotBlank() && voiceAutoSpeak) {
                     loadingStatus = "Подготовка голоса..."
-                    pendingTtsBytes.value = withContext(Dispatchers.IO) { downloadTtsAudio(voice.trim(), apiKey) }
+                    pendingTtsBytes.value = withContext(Dispatchers.IO) { downloadTtsAudio(formatPhoneNumbers(voice.trim()), apiKey) }
                 }
                 answer = html
                 voiceComment = voice
@@ -1144,6 +1144,10 @@ private suspend fun appendBookingToSheet(
         true             // any response = script ran = success
     } catch (_: Exception) { false }
 }
+
+// Splits digit sequences of 7+ chars with spaces so TTS reads each digit separately
+private fun formatPhoneNumbers(text: String): String =
+    Regex("""\d{7,}""").replace(text) { it.value.toCharArray().joinToString(" ") }
 
 private suspend fun downloadTtsAudio(text: String, apiKey: String): ByteArray? = withContext(Dispatchers.IO) {
     try {
