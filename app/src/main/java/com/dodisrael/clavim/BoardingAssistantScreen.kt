@@ -73,6 +73,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -143,6 +144,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
     var pendingBooking by remember { mutableStateOf<PendingBooking?>(null) }
     var shouldAutoLaunchMic by remember { mutableStateOf(false) }
     var bookingSuccess by remember { mutableStateOf(false) }
+    val pendingTtsDeferred = remember { mutableStateOf<Deferred<ByteArray?>?>(null) }
 
     val mediaPlayerHolder = remember { mutableStateOf<MediaPlayer?>(null) }
     val ttsHolder = remember { mutableStateOf<TextToSpeech?>(null) }
@@ -185,27 +187,13 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
 
         if (apiKey.isBlank()) { speakWithTts(text); return }
 
+        val deferred = pendingTtsDeferred.value
+        pendingTtsDeferred.value = null
+
         scope.launch {
             isSpeaking = true
             val plain = android.text.Html.fromHtml(text, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
-            val bytes = withContext(Dispatchers.IO) {
-                try {
-                    val body = JSONObject().apply {
-                        put("model", "tts-1")
-                        put("input", plain)
-                        put("voice", "nova")
-                    }.toString()
-                    val conn = URL("https://api.openai.com/v1/audio/speech").openConnection() as HttpURLConnection
-                    conn.requestMethod = "POST"
-                    conn.setRequestProperty("Content-Type", "application/json")
-                    conn.setRequestProperty("Authorization", "Bearer $apiKey")
-                    conn.doOutput = true
-                    conn.connectTimeout = 15_000
-                    conn.readTimeout = 30_000
-                    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-                    if (conn.responseCode != 200) null else conn.inputStream.readBytes()
-                } catch (_: Exception) { null }
-            }
+            val bytes = deferred?.await() ?: withContext(Dispatchers.IO) { downloadTtsAudio(plain, apiKey) }
             if (bytes != null) {
                 withContext(Dispatchers.IO) {
                     try {
@@ -280,6 +268,10 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                         }
                         answer = html
                         voiceComment = voice
+                        if (voice.isNotBlank() && apiKey.isNotBlank()) {
+                            val plain = voice.trim()
+                            pendingTtsDeferred.value = scope.async(Dispatchers.IO) { downloadTtsAudio(plain, apiKey) }
+                        }
                         if (voice.isNotBlank() && voiceAutoSpeak) speak(voice)
                     }
                 } catch (e: Exception) {
@@ -406,6 +398,10 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                 answer = html
                 voiceComment = voice
 
+                if (voice.isNotBlank() && apiKey.isNotBlank()) {
+                    val plain = voice.trim()
+                    pendingTtsDeferred.value = scope.async(Dispatchers.IO) { downloadTtsAudio(plain, apiKey) }
+                }
                 if (voice.isNotBlank() && voiceAutoSpeak) {
                     speak(voice)
                 }
@@ -1149,6 +1145,25 @@ private suspend fun appendBookingToSheet(
         conn.responseCode // wait for response
         true             // any response = script ran = success
     } catch (_: Exception) { false }
+}
+
+private suspend fun downloadTtsAudio(text: String, apiKey: String): ByteArray? = withContext(Dispatchers.IO) {
+    try {
+        val body = JSONObject().apply {
+            put("model", "tts-1")
+            put("input", text)
+            put("voice", "nova")
+        }.toString()
+        val conn = URL("https://api.openai.com/v1/audio/speech").openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.setRequestProperty("Authorization", "Bearer $apiKey")
+        conn.doOutput = true
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 30_000
+        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+        if (conn.responseCode != 200) null else conn.inputStream.readBytes()
+    } catch (_: Exception) { null }
 }
 
 private fun wrapInHtml(content: String): String = """<!DOCTYPE html>
