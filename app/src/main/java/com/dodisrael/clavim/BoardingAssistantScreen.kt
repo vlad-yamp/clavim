@@ -122,7 +122,7 @@ private data class PendingBooking(
 )
 
 @Composable
-fun BoardingAssistantScreen(onBack: () -> Unit) {
+fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("clavim_prefs", Context.MODE_PRIVATE) }
@@ -143,6 +143,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
     var pendingBooking by remember { mutableStateOf<PendingBooking?>(null) }
     var shouldAutoLaunchMic by remember { mutableStateOf(false) }
     var bookingSuccess by remember { mutableStateOf(false) }
+    var lastTableType by remember { mutableStateOf<TableType?>(null) }
     val pendingTtsBytes = remember { mutableStateOf<ByteArray?>(null) }
 
     val mediaPlayerHolder = remember { mutableStateOf<MediaPlayer?>(null) }
@@ -291,9 +292,11 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
             galleryUrls = emptyList()
             fullScreenPhotoIndex = null
             bookingSuccess = false
+            lastTableType = null
             try {
                 loadingStatus = "Определяю категорию..."
                 val result = classifyQuestion(question, apiKey)
+                lastTableType = result.tableType
 
                 val tableLabel = when (result.tableType) {
                     TableType.BOARDING       -> "Передержка"
@@ -705,13 +708,65 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C))
                             ) {
-                                Icon(
-                                    Icons.Default.OpenInNew,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.size(6.dp))
-                                Text("Перейти в таблицу передержки", color = Color.White)
+                                Text("Таблица передержки", color = Color.White)
+                            }
+                        }
+                        if (lastTableType == TableType.BOARDING) {
+                            Button(
+                                onClick = {
+                                    context.openInSheets(
+                                        "https://docs.google.com/spreadsheets/d/1P44f7Fdk8_TiB6Rn67YLNbfnVHK7TIThMLsDiN6sgAs/edit?gid=0#gid=0"
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C))
+                            ) {
+                                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(6.dp))
+                                Text("Таблица передержки", color = Color.White)
+                            }
+                        }
+                        if (lastTableType == TableType.TRAINING) {
+                            Button(
+                                onClick = {
+                                    context.openInSheets(
+                                        "https://docs.google.com/spreadsheets/d/1k7usk6ZFkPL7x6-CFFfAr87kQvRkI9TBCZZqJFej0X4/edit?gid=0#gid=0"
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF283593))
+                            ) {
+                                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(6.dp))
+                                Text("Таблица занятий", color = Color.White)
+                            }
+                        }
+                        if (lastTableType == TableType.CLIENTS) {
+                            Button(
+                                onClick = {
+                                    context.openInSheets(
+                                        "https://docs.google.com/spreadsheets/d/1P44f7Fdk8_TiB6Rn67YLNbfnVHK7TIThMLsDiN6sgAs/edit?gid=1215152509#gid=1215152509"
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A))
+                            ) {
+                                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(6.dp))
+                                Text("Список клиентов", color = Color.White)
+                            }
+                        }
+                        if (lastTableType == TableType.PHOTOS) {
+                            Button(
+                                onClick = onTelegramFosteringClick,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF039BE5))
+                            ) {
+                                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(6.dp))
+                                Text("Фото из Телеграм", color = Color.White)
                             }
                         }
                     }

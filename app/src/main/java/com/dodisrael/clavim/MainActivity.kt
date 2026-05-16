@@ -120,6 +120,9 @@ fun AppContent() {
             onBoardingAssistantClick   = { screen = Screen.BOARDING_ASSISTANT },
             onSettingsClick            = { screen = Screen.SETTINGS }
         )
-        Screen.BOARDING_ASSISTANT  -> BoardingAssistantScreen(onBack = { screen = Screen.MAIN })
+        Screen.BOARDING_ASSISTANT  -> BoardingAssistantScreen(
+            onBack = { screen = Screen.MAIN },
+            onTelegramFosteringClick = { screen = Screen.TELEGRAM_FOSTERING }
+        )
     }
 }
