@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material3.Button
@@ -97,7 +98,21 @@ private const val CLIENTS_CSV_URL =
 private const val TRAINING_CSV_URL =
     "https://docs.google.com/spreadsheets/d/1k7usk6ZFkPL7x6-CFFfAr87kQvRkI9TBCZZqJFej0X4/export?format=csv&gid=0"
 
-private enum class TableType { BOARDING, CLIENTS, TRAINING, PHOTOS }
+private enum class TableType { BOARDING, CLIENTS, TRAINING, PHOTOS, RECORD_BOOKING }
+
+private data class ClassifyResult(
+    val tableType: TableType,
+    val dogName: String? = null,
+    val startDate: String? = null,
+    val endDate: String? = null
+)
+
+private data class PendingBooking(
+    val dogName: String,
+    val startDate: String,
+    val endDate: String,
+    val candidates: List<String>
+)
 
 @Composable
 fun BoardingAssistantScreen(onBack: () -> Unit) {
@@ -118,6 +133,9 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
     var answerWebViewHeight by remember { mutableStateOf(100.dp) }
     var fullScreenPhotoIndex by remember { mutableStateOf<Int?>(null) }
     var galleryUrls by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pendingBooking by remember { mutableStateOf<PendingBooking?>(null) }
+    var shouldAutoLaunchMic by remember { mutableStateOf(false) }
+    var bookingSuccess by remember { mutableStateOf(false) }
 
     // TextToSpeech lifecycle
     val ttsHolder = remember { mutableStateOf<TextToSpeech?>(null) }
@@ -164,6 +182,47 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
     fun askQuestion() {
         if (apiKey.isBlank()) { errorText = "API ключ не задан. Перейдите в Настройки."; return }
         if (question.isBlank()) return
+
+        // Disambiguation reply for pending booking
+        val booking = pendingBooking
+        if (booking != null) {
+            scope.launch {
+                isLoading = true
+                loadingStatus = "Уточняю выбор..."
+                errorText = ""
+                answer = ""
+                try {
+                    val selected = disambiguateDog(question, booking.candidates, apiKey)
+                    if (selected == null) {
+                        answer = "<p>Не удалось уточнить. Попробуйте сказать иначе.</p>"
+                        shouldAutoLaunchMic = true
+                    } else {
+                        pendingBooking = null
+                        loadingStatus = "Записываю в таблицу..."
+                        val webUrl = prefs.getString("apps_script_url", "") ?: ""
+                        val success = appendBookingToSheet(booking.startDate, booking.endDate, selected, webUrl)
+                        val (html, voice) = if (success) {
+                            bookingSuccess = true
+                            "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ Записано!</p>" +
+                            "<p>$selected</p>" +
+                            "<p>📅 с <b>${booking.startDate}</b> по <b>${booking.endDate}</b></p>" to "Записано!"
+                        } else {
+                            "<p style='color:#D32F2F'>❌ Ошибка записи. Проверьте URL Apps Script в настройках.</p>" to ""
+                        }
+                        answer = html
+                        voiceComment = voice
+                        if (voice.isNotBlank() && voiceAutoSpeak) speak(voice)
+                    }
+                } catch (e: Exception) {
+                    pendingBooking = null
+                    errorText = "Ошибка: ${e.message}"
+                }
+                isLoading = false
+                loadingStatus = ""
+            }
+            return
+        }
+
         scope.launch {
             isLoading = true
             errorText = ""
@@ -171,21 +230,23 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
             voiceComment = ""
             galleryUrls = emptyList()
             fullScreenPhotoIndex = null
+            bookingSuccess = false
             try {
                 loadingStatus = "Определяю категорию..."
-                val (tableType, dogName) = classifyQuestion(question, apiKey)
+                val result = classifyQuestion(question, apiKey)
 
-                val tableLabel = when (tableType) {
-                    TableType.BOARDING -> "Передержка"
-                    TableType.CLIENTS  -> "Список клиентов"
-                    TableType.TRAINING -> "Занятия с собаками"
-                    TableType.PHOTOS   -> "Фото из канала"
+                val tableLabel = when (result.tableType) {
+                    TableType.BOARDING       -> "Передержка"
+                    TableType.CLIENTS        -> "Список клиентов"
+                    TableType.TRAINING       -> "Занятия с собаками"
+                    TableType.PHOTOS         -> "Фото из канала"
+                    TableType.RECORD_BOOKING -> "Запись на передержку"
                 }
                 loadingStatus = "Загружаю «$tableLabel»..."
 
-                val (html, voice) = when (tableType) {
+                val (html, voice) = when (result.tableType) {
                     TableType.PHOTOS -> {
-                        val name = dogName ?: question
+                        val name = result.dogName ?: question
                         loadingStatus = "Обновляю канал..."
                         syncFosteringChannel(context, incremental = true, onProgress = {})
                         loadingStatus = "Ищу фото «$name»..."
@@ -201,6 +262,45 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                             answerWebViewHeight = maxOf(200.dp, (posts.size * 280).dp)
                             galleryUrls = posts.map { it.photoUrl }
                             buildPhotoGalleryHtml(posts, name) to ""
+                        }
+                    }
+                    TableType.RECORD_BOOKING -> {
+                        val dogName  = result.dogName
+                        val startDate = result.startDate
+                        val endDate   = result.endDate
+                        if (dogName == null || startDate == null || endDate == null) {
+                            "<p>Не удалось распознать кличку или даты. Попробуйте ещё раз.</p>" to ""
+                        } else {
+                            loadingStatus = "Ищу собаку в базе клиентов..."
+                            val csv = fetchCsv(CLIENTS_CSV_URL)
+                            val candidates = findDogCandidates(csv, dogName)
+                            when {
+                                candidates.isEmpty() ->
+                                    "<p>Собака с кличкой <b>«$dogName»</b> не найдена в базе клиентов.</p>" to
+                                    "Собака $dogName не найдена в базе"
+                                candidates.size == 1 -> {
+                                    loadingStatus = "Записываю в таблицу..."
+                                    val webUrl = prefs.getString("apps_script_url", "") ?: ""
+                                    val success = appendBookingToSheet(startDate, endDate, candidates[0], webUrl)
+                                    if (success) {
+                                        bookingSuccess = true
+                                        "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ Записано!</p>" +
+                                        "<p>${candidates[0]}</p>" +
+                                        "<p>📅 с <b>$startDate</b> по <b>$endDate</b></p>" to "Записано!"
+                                    } else {
+                                        "<p style='color:#D32F2F'>❌ Ошибка записи. Проверьте URL Apps Script в настройках.</p>" to ""
+                                    }
+                                }
+                                else -> {
+                                    val listHtml = candidates.joinToString("") { "<li>$it</li>" }
+                                    pendingBooking = PendingBooking(dogName, startDate, endDate, candidates)
+                                    shouldAutoLaunchMic = true
+                                    "<p>Найдено <b>${candidates.size}</b> собаки с кличкой <b>«$dogName»</b>:</p>" +
+                                    "<ul>$listHtml</ul>" +
+                                    "<p>🎤 Уточните породу или хозяина...</p>" to
+                                    "Найдено ${candidates.size} собаки с кличкой $dogName. Уточните породу или хозяина."
+                                }
+                            }
                         }
                     }
                     TableType.BOARDING -> {
@@ -262,6 +362,14 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
         try { speechLauncher.launch(intent) } catch (_: ActivityNotFoundException) {}
+    }
+
+    LaunchedEffect(shouldAutoLaunchMic) {
+        if (shouldAutoLaunchMic) {
+            shouldAutoLaunchMic = false
+            kotlinx.coroutines.delay(1500)
+            launchSpeech()
+        }
     }
 
     fullScreenPhotoIndex?.let { idx ->
@@ -496,6 +604,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                                     answer = ""
                                     voiceComment = ""
                                     errorText = ""
+                                    bookingSuccess = false
                                     launchSpeech()
                                 },
                                 modifier = Modifier.weight(1f),
@@ -508,6 +617,25 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                                 )
                                 Spacer(Modifier.size(6.dp))
                                 Text("Новый вопрос", color = Color.White)
+                            }
+                        }
+                        if (bookingSuccess) {
+                            Button(
+                                onClick = {
+                                    context.openInSheets(
+                                        "https://docs.google.com/spreadsheets/d/1P44f7Fdk8_TiB6Rn67YLNbfnVHK7TIThMLsDiN6sgAs/edit?gid=0#gid=0"
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C))
+                            ) {
+                                Icon(
+                                    Icons.Default.OpenInNew,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.size(6.dp))
+                                Text("Перейти в таблицу передержки", color = Color.White)
                             }
                         }
                     }
@@ -533,26 +661,37 @@ private suspend fun fetchCsv(url: String): String = withContext(Dispatchers.IO) 
     }
 }
 
-private suspend fun classifyQuestion(question: String, apiKey: String): Pair<TableType, String?> =
+private suspend fun classifyQuestion(question: String, apiKey: String): ClassifyResult =
     withContext(Dispatchers.IO) {
-        val systemPrompt = """Ты определяешь к какой категории относится вопрос о бизнесе DogIsrael (дрессировка и передержка собак, Израиль).
+        val today = SimpleDateFormat("d MMMM yyyy", Locale("ru")).format(Date())
+        val systemPrompt = """Ты определяешь категорию запроса о бизнесе DogIsrael (дрессировка и передержка собак, Израиль).
+Сегодня: $today.
 
-Категории:
-- BOARDING: передержка (кто на передержке, свободные места, даты заезда/выезда, бронирование мест)
-- CLIENTS: список клиентов (контакты, телефоны, имена хозяев, информация о собаках)
-- TRAINING: занятия и дрессировка (расписание занятий, посещаемость, тренировки, прогресс)
-- PHOTOS:<кличка>: запрос на показ фото собаки (покажи, хочу посмотреть фото, есть фото и т.п.)
+Категории и формат ответа (строго):
+- BOARDING — вопрос про передержку (кто сейчас, свободные места, даты)
+- CLIENTS — вопрос про клиентов (контакты, телефоны, имена хозяев)
+- TRAINING — вопрос про занятия/дрессировку (расписание, посещаемость)
+- PHOTOS:<кличка> — запрос на показ фото собаки (покажи, хочу посмотреть)
+- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца> — ЗАПИСЬ собаки на передержку (ключевые слова: запиши, запишите, добавь запись, забронируй; никогда не путать с вопросами про текущую передержку)
 
-Если запрос про фото — извлеки кличку в именительном падеже и ответь PHOTOS:<кличка>
-Примеры: "покажи Ричарда" → PHOTOS:Ричард, "есть фото Бобика?" → PHOTOS:Бобик, "покажи мне Белку" → PHOTOS:Белка
-Иначе ответь ТОЛЬКО одним словом: BOARDING, CLIENTS или TRAINING."""
+Для PHOTOS: кличка в именительном падеже.
+Для RECORD_BOOKING: кличка в именительном падеже, даты в формате ДД.ММ.ГГГГ.
+  Правило года: если месяц >= текущего месяца — текущий год; иначе — следующий год.
+
+Примеры:
+"покажи Ричарда" → PHOTOS:Ричард
+"запиши Мэри с 10 по 15 июня" → RECORD_BOOKING:Мэри:10.06.2026:15.06.2026
+"запишите Бобика на передержку с 1 по 5 марта" → RECORD_BOOKING:Бобик:01.03.2027:05.03.2027
+"кто на передержке сейчас" → BOARDING
+
+Ответь ТОЛЬКО в одном из указанных форматов, без пояснений."""
 
         val systemMsg = JSONObject().apply { put("role", "system"); put("content", systemPrompt) }
         val userMsg   = JSONObject().apply { put("role", "user");   put("content", question) }
         val body = JSONObject().apply {
             put("model", "gpt-4o-mini")
             put("messages", JSONArray().apply { put(systemMsg); put(userMsg) })
-            put("max_tokens", 20)
+            put("max_tokens", 40)
             put("temperature", 0.0)
         }.toString()
 
@@ -572,11 +711,20 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Pair<Tab
             .getJSONObject("message").getString("content")
             .trim()
         when {
+            content.startsWith("RECORD_BOOKING:", ignoreCase = true) -> {
+                val parts = content.split(":")
+                ClassifyResult(
+                    tableType = TableType.RECORD_BOOKING,
+                    dogName   = parts.getOrNull(1)?.trim(),
+                    startDate = parts.getOrNull(2)?.trim(),
+                    endDate   = parts.getOrNull(3)?.trim()
+                )
+            }
             content.startsWith("PHOTOS:", ignoreCase = true) ->
-                TableType.PHOTOS to content.substringAfter(":").trim()
-            content.contains("CLIENTS", ignoreCase = true)  -> TableType.CLIENTS to null
-            content.contains("TRAINING", ignoreCase = true) -> TableType.TRAINING to null
-            else                                             -> TableType.BOARDING to null
+                ClassifyResult(TableType.PHOTOS, dogName = content.substringAfter(":").trim())
+            content.contains("CLIENTS", ignoreCase = true)  -> ClassifyResult(TableType.CLIENTS)
+            content.contains("TRAINING", ignoreCase = true) -> ClassifyResult(TableType.TRAINING)
+            else                                             -> ClassifyResult(TableType.BOARDING)
         }
     }
 
@@ -849,6 +997,70 @@ private fun buildPhotoGalleryHtml(posts: List<FosteringPost>, dogName: String): 
         sb.append("</div>")
     }
     return sb.toString()
+}
+
+private fun findDogCandidates(csv: String, dogName: String): List<String> =
+    csv.lines().drop(1).filter { it.isNotBlank() }.mapNotNull { line ->
+        val cols = parseCsvLine(line)
+        val name = cols.getOrNull(3)?.trim() ?: return@mapNotNull null
+        if (name.equals(dogName, ignoreCase = true))
+            cols.getOrNull(8)?.trim()?.takeIf { it.isNotBlank() }
+        else null
+    }.distinct()
+
+private suspend fun disambiguateDog(
+    clarification: String,
+    candidates: List<String>,
+    apiKey: String
+): String? = withContext(Dispatchers.IO) {
+    val numbered = candidates.mapIndexed { i, c -> "${i + 1}: $c" }.joinToString("\n")
+    val prompt = "Есть несколько собак:\n$numbered\n\nПользователь уточнил: «$clarification»\n\nОтветь ТОЛЬКО цифрой — номером нужной записи. Если неясно — ответь 0."
+    val body = JSONObject().apply {
+        put("model", "gpt-4o-mini")
+        put("messages", JSONArray().apply {
+            put(JSONObject().apply { put("role", "user"); put("content", prompt) })
+        })
+        put("max_tokens", 5)
+        put("temperature", 0.0)
+    }.toString()
+    val conn = URL("https://api.openai.com/v1/chat/completions").openConnection() as HttpURLConnection
+    conn.requestMethod = "POST"
+    conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+    conn.setRequestProperty("Authorization", "Bearer $apiKey")
+    conn.doOutput = true
+    conn.connectTimeout = 15_000
+    conn.readTimeout = 15_000
+    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+    if (conn.responseCode != 200) return@withContext null
+    val answer = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).readText())
+        .getJSONArray("choices").getJSONObject(0)
+        .getJSONObject("message").getString("content").trim()
+    val idx = answer.toIntOrNull() ?: 0
+    if (idx < 1 || idx > candidates.size) null else candidates[idx - 1]
+}
+
+private suspend fun appendBookingToSheet(
+    startDate: String,
+    endDate: String,
+    info: String,
+    webAppUrl: String
+): Boolean = withContext(Dispatchers.IO) {
+    if (webAppUrl.isBlank()) return@withContext false
+    try {
+        val enc = Charsets.UTF_8.name()
+        val url = buildString {
+            append(webAppUrl)
+            append("?startDate=").append(java.net.URLEncoder.encode(startDate, enc))
+            append("&endDate=").append(java.net.URLEncoder.encode(endDate, enc))
+            append("&info=").append(java.net.URLEncoder.encode(info, enc))
+        }
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 60_000
+        conn.instanceFollowRedirects = true
+        conn.responseCode // wait for response
+        true             // any response = script ran = success
+    } catch (_: Exception) { false }
 }
 
 private fun wrapInHtml(content: String): String = """<!DOCTYPE html>

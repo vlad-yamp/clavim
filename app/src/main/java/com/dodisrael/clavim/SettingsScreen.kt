@@ -50,7 +50,9 @@ fun SettingsScreen(onBack: () -> Unit) {
 
     var apiKey by remember { mutableStateOf(prefs.getString("openai_api_key", "") ?: "") }
     var voiceAutoSpeak by remember { mutableStateOf(prefs.getBoolean("voice_auto_speak", true)) }
+    var appsScriptUrl by remember { mutableStateOf(prefs.getString("apps_script_url", "") ?: "") }
     var keySaved by remember { mutableStateOf(false) }
+    var scriptUrlSaved by remember { mutableStateOf(false) }
     var keyVisible by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -111,6 +113,45 @@ fun SettingsScreen(onBack: () -> Unit) {
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A))
                     ) {
                         Text(if (keySaved) "Сохранено ✓" else "Сохранить", color = Color.White)
+                    }
+                }
+            }
+
+            // Apps Script URL
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("URL Apps Script (запись в таблицу)", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Text(
+                        "Вставьте ссылку на развёрнутый Google Apps Script Web App для записи на передержку.",
+                        fontSize = 13.sp, color = Color(0xFF757575)
+                    )
+                    OutlinedTextField(
+                        value = appsScriptUrl,
+                        onValueChange = { appsScriptUrl = it; scriptUrlSaved = false },
+                        placeholder = { Text("https://script.google.com/macros/s/…/exec") },
+                        singleLine = false,
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            prefs.edit().putString("apps_script_url", appsScriptUrl.trim()).apply()
+                            appsScriptUrl = appsScriptUrl.trim()
+                            scriptUrlSaved = true
+                        },
+                        enabled = appsScriptUrl.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A))
+                    ) {
+                        Text(if (scriptUrlSaved) "Сохранено ✓" else "Сохранить", color = Color.White)
                     }
                 }
             }

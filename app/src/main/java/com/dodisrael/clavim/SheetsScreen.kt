@@ -69,7 +69,7 @@ private fun buildSheetsMenuItems(): List<MenuItem> = listOf(
     }
 )
 
-private fun Context.openInSheets(url: String) {
+fun Context.openInSheets(url: String) {
     val urlWithAccount = Uri.parse(url).buildUpon()
         .appendQueryParameter("authuser", "vlad.yamp@gmail.com")
         .build().toString()
