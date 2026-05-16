@@ -73,7 +73,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -144,7 +143,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
     var pendingBooking by remember { mutableStateOf<PendingBooking?>(null) }
     var shouldAutoLaunchMic by remember { mutableStateOf(false) }
     var bookingSuccess by remember { mutableStateOf(false) }
-    val pendingTtsDeferred = remember { mutableStateOf<Deferred<ByteArray?>?>(null) }
+    val pendingTtsBytes = remember { mutableStateOf<ByteArray?>(null) }
 
     val mediaPlayerHolder = remember { mutableStateOf<MediaPlayer?>(null) }
     val ttsHolder = remember { mutableStateOf<TextToSpeech?>(null) }
@@ -187,13 +186,13 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
 
         if (apiKey.isBlank()) { speakWithTts(text); return }
 
-        val deferred = pendingTtsDeferred.value
-        pendingTtsDeferred.value = null
+        val preloaded = pendingTtsBytes.value
+        pendingTtsBytes.value = null
 
         scope.launch {
             isSpeaking = true
             val plain = android.text.Html.fromHtml(text, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
-            val bytes = deferred?.await() ?: withContext(Dispatchers.IO) { downloadTtsAudio(plain, apiKey) }
+            val bytes = preloaded ?: withContext(Dispatchers.IO) { downloadTtsAudio(plain, apiKey) }
             if (bytes != null) {
                 withContext(Dispatchers.IO) {
                     try {
@@ -266,12 +265,12 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                         } else {
                             "<p style='color:#D32F2F'>❌ Ошибка. Проверьте URL Apps Script в настройках.</p>" to ""
                         }
+                        if (voice.isNotBlank() && apiKey.isNotBlank() && voiceAutoSpeak) {
+                            loadingStatus = "Подготовка голоса..."
+                            pendingTtsBytes.value = withContext(Dispatchers.IO) { downloadTtsAudio(voice.trim(), apiKey) }
+                        }
                         answer = html
                         voiceComment = voice
-                        if (voice.isNotBlank() && apiKey.isNotBlank()) {
-                            val plain = voice.trim()
-                            pendingTtsDeferred.value = scope.async(Dispatchers.IO) { downloadTtsAudio(plain, apiKey) }
-                        }
                         if (voice.isNotBlank() && voiceAutoSpeak) speak(voice)
                     }
                 } catch (e: Exception) {
@@ -395,13 +394,12 @@ fun BoardingAssistantScreen(onBack: () -> Unit) {
                     }
                 }
 
+                if (voice.isNotBlank() && apiKey.isNotBlank() && voiceAutoSpeak) {
+                    loadingStatus = "Подготовка голоса..."
+                    pendingTtsBytes.value = withContext(Dispatchers.IO) { downloadTtsAudio(voice.trim(), apiKey) }
+                }
                 answer = html
                 voiceComment = voice
-
-                if (voice.isNotBlank() && apiKey.isNotBlank()) {
-                    val plain = voice.trim()
-                    pendingTtsDeferred.value = scope.async(Dispatchers.IO) { downloadTtsAudio(plain, apiKey) }
-                }
                 if (voice.isNotBlank() && voiceAutoSpeak) {
                     speak(voice)
                 }
