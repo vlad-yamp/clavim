@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,13 +24,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -56,6 +60,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import org.json.JSONArray
 import org.json.JSONObject
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 data class AddressEntry(val name: String, val hebrew: String, val russian: String)
 
@@ -90,6 +96,7 @@ private fun saveAddresses(prefs: android.content.SharedPreferences, addresses: L
     prefs.edit().putString("addresses", arr.toString()).apply()
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AddressesScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -97,7 +104,15 @@ fun AddressesScreen(onBack: () -> Unit) {
 
     var addresses by remember { mutableStateOf(loadAddresses(prefs)) }
     var editingIndex by remember { mutableStateOf<Int?>(null) }
+    var deletingIndex by remember { mutableStateOf<Int?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
+
+    val lazyListState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        val newList = addresses.toMutableList().apply { add(to.index, removeAt(from.index)) }
+        addresses = newList
+        saveAddresses(prefs, newList)
+    }
 
     if (editingIndex != null || showAddDialog) {
         val initial = editingIndex?.let { addresses[it] } ?: AddressEntry("", "", "")
@@ -117,49 +132,72 @@ fun AddressesScreen(onBack: () -> Unit) {
         )
     }
 
+    deletingIndex?.let { idx ->
+        AlertDialog(
+            onDismissRequest = { deletingIndex = null },
+            title = { Text("Удалить адрес?") },
+            text = { Text(addresses[idx].name) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val newList = addresses.toMutableList().also { it.removeAt(idx) }
+                        addresses = newList
+                        saveAddresses(prefs, newList)
+                        deletingIndex = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB00020))
+                ) { Text("Удалить", color = Color.White) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingIndex = null }) { Text("Отмена") }
+            }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
             title = "Адреса",
-            subtitle = "Часто используемые адреса",
+            subtitle = "Удерживайте ≡ для перемещения",
             showBack = true,
             onBack = onBack
         )
         Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
+                state = lazyListState,
                 modifier = Modifier
                     .fillMaxSize()
                     .windowInsetsPadding(WindowInsets.navigationBars),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                itemsIndexed(addresses) { idx, addr ->
-                    AddressCard(
-                        entry = addr,
-                        onEdit = { editingIndex = idx },
-                        onDelete = {
-                            val newList = addresses.toMutableList().also { it.removeAt(idx) }
-                            addresses = newList
-                            saveAddresses(prefs, newList)
-                        },
-                        onCopy = {
-                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val text = listOf(addr.hebrew, addr.russian).filter { it.isNotBlank() }.joinToString("\n")
-                            cm.setPrimaryClip(ClipData.newPlainText("", text))
-                            Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
-                        },
-                        onWaze = {
-                            val query = addr.hebrew.ifBlank { addr.russian }
-                            val url = "https://waze.com/ul?q=${Uri.encode(query)}&navigate=yes"
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                                setPackage("com.waze")
+                itemsIndexed(addresses, key = { _, item -> item.name + item.hebrew }) { idx, addr ->
+                    ReorderableItem(reorderState, key = addr.name + addr.hebrew) { isDragging ->
+                        AddressCard(
+                            entry = addr,
+                            isDragging = isDragging,
+                            dragHandleModifier = Modifier.longPressDraggableHandle(),
+                            onEdit = { editingIndex = idx },
+                            onDelete = { deletingIndex = idx },
+                            onCopy = {
+                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val text = listOf(addr.hebrew, addr.russian).filter { it.isNotBlank() }.joinToString("\n")
+                                cm.setPrimaryClip(ClipData.newPlainText("", text))
+                                Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+                            },
+                            onWaze = {
+                                val query = addr.hebrew.ifBlank { addr.russian }
+                                val url = "https://waze.com/ul?q=${Uri.encode(query)}&navigate=yes"
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                    setPackage("com.waze")
+                                }
+                                try {
+                                    context.startActivity(intent)
+                                } catch (_: ActivityNotFoundException) {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                }
                             }
-                            try {
-                                context.startActivity(intent)
-                            } catch (_: ActivityNotFoundException) {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                            }
-                        }
-                    )
+                        )
+                    }
                 }
                 item { Spacer(Modifier.height(80.dp)) }
             }
@@ -180,6 +218,8 @@ fun AddressesScreen(onBack: () -> Unit) {
 @Composable
 private fun AddressCard(
     entry: AddressEntry,
+    isDragging: Boolean,
+    dragHandleModifier: Modifier,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onCopy: () -> Unit,
@@ -189,13 +229,21 @@ private fun AddressCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(2.dp)
+        elevation = CardDefaults.cardElevation(if (isDragging) 8.dp else 2.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Icon(
+                    Icons.Default.DragHandle,
+                    contentDescription = "Переместить",
+                    tint = Color(0xFFBDBDBD),
+                    modifier = dragHandleModifier
+                        .size(32.dp)
+                        .padding(end = 4.dp)
+                )
                 Text(
                     entry.name,
                     fontWeight = FontWeight.SemiBold,
