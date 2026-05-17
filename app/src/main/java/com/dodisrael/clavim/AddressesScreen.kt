@@ -1,8 +1,11 @@
 package com.dodisrael.clavim
 
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -142,6 +146,18 @@ fun AddressesScreen(onBack: () -> Unit) {
                             val text = listOf(addr.hebrew, addr.russian).filter { it.isNotBlank() }.joinToString("\n")
                             cm.setPrimaryClip(ClipData.newPlainText("", text))
                             Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+                        },
+                        onWaze = {
+                            val query = addr.hebrew.ifBlank { addr.russian }
+                            val url = "https://waze.com/ul?q=${Uri.encode(query)}&navigate=yes"
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                setPackage("com.waze")
+                            }
+                            try {
+                                context.startActivity(intent)
+                            } catch (_: ActivityNotFoundException) {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            }
                         }
                     )
                 }
@@ -166,7 +182,8 @@ private fun AddressCard(
     entry: AddressEntry,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onCopy: () -> Unit
+    onCopy: () -> Unit,
+    onWaze: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -186,6 +203,9 @@ private fun AddressCard(
                     color = Color(0xFF1C1B1F),
                     modifier = Modifier.weight(1f)
                 )
+                IconButton(onClick = onWaze, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.Navigation, contentDescription = "Waze", tint = Color(0xFF33CCFF), modifier = Modifier.size(20.dp))
+                }
                 IconButton(onClick = onCopy, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF9E9E9E), modifier = Modifier.size(18.dp))
                 }
