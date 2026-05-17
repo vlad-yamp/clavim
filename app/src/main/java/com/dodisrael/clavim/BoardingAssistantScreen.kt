@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -77,6 +78,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.net.Uri
 import java.io.ByteArrayInputStream
 import java.util.zip.ZipInputStream
 import org.json.JSONArray
@@ -103,7 +105,7 @@ private const val CLIENTS_CSV_URL =
 private const val TRAINING_CSV_URL =
     "https://docs.google.com/spreadsheets/d/1k7usk6ZFkPL7x6-CFFfAr87kQvRkI9TBCZZqJFej0X4/export?format=csv&gid=0"
 
-private enum class TableType { BOARDING, CLIENTS, TRAINING, PHOTOS, RECORD_BOOKING }
+private enum class TableType { BOARDING, CLIENTS, TRAINING, PHOTOS, RECORD_BOOKING, NAVIGATION }
 
 private data class ClassifyResult(
     val tableType: TableType,
@@ -144,6 +146,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
     var shouldAutoLaunchMic by remember { mutableStateOf(false) }
     var bookingSuccess by remember { mutableStateOf(false) }
     var lastTableType by remember { mutableStateOf<TableType?>(null) }
+    var wazeAddress by remember { mutableStateOf("") }
     val pendingTtsBytes = remember { mutableStateOf<ByteArray?>(null) }
 
     val mediaPlayerHolder = remember { mutableStateOf<MediaPlayer?>(null) }
@@ -293,6 +296,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
             fullScreenPhotoIndex = null
             bookingSuccess = false
             lastTableType = null
+            wazeAddress = ""
             try {
                 loadingStatus = "Определяю категорию..."
                 val result = classifyQuestion(question, apiKey)
@@ -304,10 +308,40 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
                     TableType.TRAINING       -> "Занятия с собаками"
                     TableType.PHOTOS         -> "Фото из канала"
                     TableType.RECORD_BOOKING -> "Запись на передержку"
+                    TableType.NAVIGATION     -> "Навигация"
                 }
                 loadingStatus = "Загружаю «$tableLabel»..."
 
                 val (html, voice) = when (result.tableType) {
+                    TableType.NAVIGATION -> {
+                        val personName = result.dogName ?: question
+                        loadingStatus = "Ищу адрес в книге..."
+                        val addresses = loadAddresses(prefs)
+                        if (addresses.isEmpty()) {
+                            "<p>Адресная книга пуста.</p>" to ""
+                        } else {
+                            loadingStatus = "Определяю адрес..."
+                            val hebrewAddr = findAddressForPerson(personName, addresses, apiKey)
+                            if (hebrewAddr == null) {
+                                "<p>Адрес для <b>«$personName»</b> не найден в адресной книге.</p>" to "Адрес не найден"
+                            } else {
+                                wazeAddress = hebrewAddr
+                                val entry = addresses.firstOrNull { it.hebrew == hebrewAddr }
+                                val displayName = entry?.name ?: personName
+                                val russianAddr = entry?.russian ?: ""
+                                val url = "https://waze.com/ul?q=${Uri.encode(hebrewAddr)}&navigate=yes"
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { setPackage("com.waze") }
+                                try { context.startActivity(intent) }
+                                catch (_: ActivityNotFoundException) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                                val html = buildString {
+                                    append("<p>🗺️ Маршрут к <b>$displayName</b></p>")
+                                    append("<p style='direction:rtl;text-align:right;font-size:16px'>$hebrewAddr</p>")
+                                    if (russianAddr.isNotBlank()) append("<p style='color:#757575'>$russianAddr</p>")
+                                }
+                                html to "Открываю маршрут к $displayName"
+                            }
+                        }
+                    }
                     TableType.PHOTOS -> {
                         val name = result.dogName ?: question
                         loadingStatus = "Обновляю канал..."
@@ -769,6 +803,22 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
                                 Text("Фото из Телеграм", color = Color.White)
                             }
                         }
+                        if (lastTableType == TableType.NAVIGATION && wazeAddress.isNotBlank()) {
+                            Button(
+                                onClick = {
+                                    val url = "https://waze.com/ul?q=${Uri.encode(wazeAddress)}&navigate=yes"
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { setPackage("com.waze") }
+                                    try { context.startActivity(intent) }
+                                    catch (_: ActivityNotFoundException) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF33CCFF))
+                            ) {
+                                Icon(Icons.Default.Navigation, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(6.dp))
+                                Text("Открыть Waze", color = Color.White)
+                            }
+                        }
                     }
                 }
             }
@@ -805,6 +855,7 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
 - PHOTOS:<кличка> — запрос на показ фото собаки (покажи, хочу посмотреть)
 - RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:add — ЗАПИСЬ собаки на передержку (ключевые слова: запиши, запишите, добавь, забронируй)
 - RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:delete — УДАЛЕНИЕ с передержки (ключевые слова: удали, удалить, убери, сними, отмени)
+- NAVIGATION:<имя> — маршрут к человеку из адресной книги (как доехать, как проехать, маршрут к, куда ехать к)
 
 Для PHOTOS: кличка в именительном падеже.
 Для RECORD_BOOKING: кличка в именительном падеже, даты в формате ДД.ММ.ГГГГ.
@@ -857,6 +908,8 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
             }
             content.startsWith("PHOTOS:", ignoreCase = true) ->
                 ClassifyResult(TableType.PHOTOS, dogName = content.substringAfter(":").trim())
+            content.startsWith("NAVIGATION:", ignoreCase = true) ->
+                ClassifyResult(TableType.NAVIGATION, dogName = content.substringAfter(":").trim())
             content.contains("CLIENTS", ignoreCase = true)  -> ClassifyResult(TableType.CLIENTS)
             content.contains("TRAINING", ignoreCase = true) -> ClassifyResult(TableType.TRAINING)
             else                                             -> ClassifyResult(TableType.BOARDING)
@@ -1220,6 +1273,42 @@ private suspend fun downloadTtsAudio(text: String, apiKey: String): ByteArray? =
         conn.readTimeout = 30_000
         conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
         if (conn.responseCode != 200) null else conn.inputStream.readBytes()
+    } catch (_: Exception) { null }
+}
+
+private suspend fun findAddressForPerson(
+    personName: String,
+    addresses: List<AddressEntry>,
+    apiKey: String
+): String? = withContext(Dispatchers.IO) {
+    val addressList = addresses.joinToString("\n") { "${it.name}: иврит=${it.hebrew}, русский=${it.russian}" }
+    val prompt = """Из списка адресов найди адрес для "$personName".
+Список:
+$addressList
+
+Ответь ТОЛЬКО ивритским адресом (значение поля "иврит"). Если не найдено — ответь NOT_FOUND."""
+    val body = JSONObject().apply {
+        put("model", "gpt-4o-mini")
+        put("messages", JSONArray().apply {
+            put(JSONObject().apply { put("role", "user"); put("content", prompt) })
+        })
+        put("max_tokens", 80)
+        put("temperature", 0.0)
+    }.toString()
+    try {
+        val conn = URL("https://api.openai.com/v1/chat/completions").openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        conn.setRequestProperty("Authorization", "Bearer $apiKey")
+        conn.doOutput = true
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 15_000
+        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+        if (conn.responseCode != 200) return@withContext null
+        val result = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).readText())
+            .getJSONArray("choices").getJSONObject(0)
+            .getJSONObject("message").getString("content").trim()
+        if (result.contains("NOT_FOUND", ignoreCase = true)) null else result
     } catch (_: Exception) { null }
 }
 

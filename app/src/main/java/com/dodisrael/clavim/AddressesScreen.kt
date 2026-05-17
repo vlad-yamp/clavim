@@ -75,7 +75,7 @@ private val DEFAULT_ADDRESSES = listOf(
     AddressEntry("Маккаби, доктор Авербах", "קרית מוצקין קדיש לוז 11", "Кирьят Моцкин Кадиш Люз 11")
 )
 
-private fun loadAddresses(prefs: android.content.SharedPreferences): List<AddressEntry> {
+internal fun loadAddresses(prefs: android.content.SharedPreferences): List<AddressEntry> {
     val json = prefs.getString("addresses", null) ?: return DEFAULT_ADDRESSES
     return try {
         val arr = JSONArray(json)
