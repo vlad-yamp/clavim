@@ -33,11 +33,14 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -106,6 +109,8 @@ fun AddressesScreen(onBack: () -> Unit) {
     var editingIndex by remember { mutableStateOf<Int?>(null) }
     var deletingIndex by remember { mutableStateOf<Int?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var showImportConfirm by remember { mutableStateOf(false) }
+    var selectedIndices by remember { mutableStateOf(setOf<Int>()) }
 
     val lazyListState = rememberLazyListState()
     val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
@@ -154,6 +159,42 @@ fun AddressesScreen(onBack: () -> Unit) {
         )
     }
 
+    if (showImportConfirm) {
+        AlertDialog(
+            onDismissRequest = { showImportConfirm = false },
+            title = { Text("Импорт адресов") },
+            text = { Text("Новые адреса из буфера обмена будут добавлены к существующим. Дубликаты (по названию) пропускаются.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val text = cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                        try {
+                            val arr = JSONArray(text)
+                            val imported = (0 until arr.length()).map { i ->
+                                val obj = arr.getJSONObject(i)
+                                AddressEntry(obj.optString("name"), obj.optString("hebrew"), obj.optString("russian"))
+                            }
+                            val existingNames = addresses.map { it.name.trim().lowercase() }.toSet()
+                            val toAdd = imported.filter { it.name.trim().lowercase() !in existingNames }
+                            val newList = addresses + toAdd
+                            addresses = newList
+                            saveAddresses(prefs, newList)
+                            Toast.makeText(context, "Добавлено ${toAdd.size} адресов", Toast.LENGTH_SHORT).show()
+                        } catch (_: Exception) {
+                            Toast.makeText(context, "Ошибка: неверный формат данных", Toast.LENGTH_LONG).show()
+                        }
+                        showImportConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C))
+                ) { Text("Добавить", color = Color.White) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportConfirm = false }) { Text("Отмена") }
+            }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
             title = "Адреса",
@@ -161,6 +202,47 @@ fun AddressesScreen(onBack: () -> Unit) {
             showBack = true,
             onBack = onBack
         )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = {
+                    val arr = JSONArray()
+                    selectedIndices.sorted().forEach { idx ->
+                        val a = addresses[idx]
+                        arr.put(JSONObject().apply {
+                            put("name", a.name); put("hebrew", a.hebrew); put("russian", a.russian)
+                        })
+                    }
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, arr.toString())
+                        putExtra(Intent.EXTRA_SUBJECT, "Адреса Clavim")
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Поделиться адресами"))
+                },
+                enabled = selectedIndices.isNotEmpty(),
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1))
+            ) {
+                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.size(6.dp))
+                val label = if (selectedIndices.isEmpty()) "Поделиться" else "Послать (${selectedIndices.size})"
+                Text(label, fontSize = 13.sp)
+            }
+            Button(
+                onClick = { showImportConfirm = true },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C))
+            ) {
+                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.size(6.dp))
+                Text("Импорт", fontSize = 13.sp)
+            }
+        }
         Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
                 state = lazyListState,
@@ -175,6 +257,10 @@ fun AddressesScreen(onBack: () -> Unit) {
                         AddressCard(
                             entry = addr,
                             isDragging = isDragging,
+                            isChecked = idx in selectedIndices,
+                            onCheckedChange = { checked ->
+                                selectedIndices = if (checked) selectedIndices + idx else selectedIndices - idx
+                            },
                             dragHandleModifier = Modifier.longPressDraggableHandle(),
                             onEdit = { editingIndex = idx },
                             onDelete = { deletingIndex = idx },
@@ -219,6 +305,8 @@ fun AddressesScreen(onBack: () -> Unit) {
 private fun AddressCard(
     entry: AddressEntry,
     isDragging: Boolean,
+    isChecked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
     dragHandleModifier: Modifier,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -228,7 +316,9 @@ private fun AddressCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isChecked) Color(0xFFE3F2FD) else Color.White
+        ),
         elevation = CardDefaults.cardElevation(if (isDragging) 8.dp else 2.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -236,6 +326,11 @@ private fun AddressCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Checkbox(
+                    checked = isChecked,
+                    onCheckedChange = onCheckedChange,
+                    modifier = Modifier.size(28.dp)
+                )
                 Icon(
                     Icons.Default.DragHandle,
                     contentDescription = "Переместить",
