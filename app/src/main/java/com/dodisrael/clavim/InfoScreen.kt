@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContactPage
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CurrencyExchange
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.Card
@@ -47,12 +48,13 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun InfoMenuScreen(
     onBack: () -> Unit,
-    onExchangeRatesClick: () -> Unit,Добавь а
+    onExchangeRatesClick: () -> Unit,
     onOurDataClick: () -> Unit,
+    onAddressesClick: () -> Unit,
     onWebViewClick: (url: String, title: String) -> Unit
 ) {
     val context = LocalContext.current
-    val items = remember { buildInfoMenuItems(onExchangeRatesClick, onOurDataClick, onWebViewClick) }
+    val items = remember { buildInfoMenuItems(onExchangeRatesClick, onOurDataClick, onAddressesClick, onWebViewClick) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
@@ -76,6 +78,7 @@ fun InfoMenuScreen(
 private fun buildInfoMenuItems(
     onExchangeRatesClick: () -> Unit,
     onOurDataClick: () -> Unit,
+    onAddressesClick: () -> Unit,
     onWebViewClick: (url: String, title: String) -> Unit
 ): List<MenuItem> = listOf(
     MenuItem("Курсы\nвалют", Icons.Default.CurrencyExchange, Color(0xFF00695C)) { _ ->
@@ -83,6 +86,9 @@ private fun buildInfoMenuItems(
     },
     MenuItem("Наши\nданные", Icons.Default.ContactPage, Color(0xFF0D47A1)) { _ ->
         onOurDataClick()
+    },
+    MenuItem("Адреса", Icons.Default.LocationOn, Color(0xFFAD1457)) { _ ->
+        onAddressesClick()
     },
     MenuItem("Список\nпород", Icons.Default.Pets, Color(0xFF8D6E63)) { _ ->
         onWebViewClick("https://petstory.ru/knowledge/dogs/dog-breeds/", "Список пород")
