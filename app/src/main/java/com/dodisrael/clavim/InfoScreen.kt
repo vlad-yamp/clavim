@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun InfoMenuScreen(
     onBack: () -> Unit,
-    onExchangeRatesClick: () -> Unit,
+    onExchangeRatesClick: () -> Unit,Добавь а
     onOurDataClick: () -> Unit,
     onWebViewClick: (url: String, title: String) -> Unit
 ) {

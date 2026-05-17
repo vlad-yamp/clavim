@@ -458,8 +458,8 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
-            title = "Спросить про передержку",
-            subtitle = "Голосовой ассистент",
+            title = "Голосовой ассистент",
+            subtitle = "Передержка, клиенты, занятия, фото",
             showBack = true,
             onBack = {
                 stopSpeaking()

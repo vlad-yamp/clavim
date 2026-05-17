@@ -15,7 +15,9 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Slideshow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -49,11 +51,26 @@ private fun buildTelegramMenuItems(onTelegramFosteringClick: () -> Unit): List<M
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { setPackage("org.telegram.messenger") }
         try { ctx.startActivity(intent) } catch (_: ActivityNotFoundException) { ctx.openUrl(url) }
     },
+    MenuItem("Чат DogIsrael", Icons.Default.Forum, Color(0xFF00838F)) { ctx ->
+        val url = "https://t.me/dogisrael64"
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { setPackage("org.telegram.messenger") }
+        try { ctx.startActivity(intent) } catch (_: ActivityNotFoundException) { ctx.openUrl(url) }
+    },
     MenuItem("Фото из\nTelegram", Icons.Default.Slideshow, Color(0xFF039BE5)) { _ ->
         onTelegramFosteringClick()
     },
     MenuItem("DogIsrael\nReminder", Icons.Default.NotificationsActive, Color(0xFF1565C0)) { ctx ->
         val url = "https://t.me/dogisrael_reminder_bot"
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { setPackage("org.telegram.messenger") }
+        try { ctx.startActivity(intent) } catch (_: ActivityNotFoundException) { ctx.openUrl(url) }
+    },
+    MenuItem("Собакеч", Icons.Default.Pets, Color(0xFF558B2F)) { ctx ->
+        val url = "https://t.me/sobakech_sobaki"
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { setPackage("org.telegram.messenger") }
+        try { ctx.startActivity(intent) } catch (_: ActivityNotFoundException) { ctx.openUrl(url) }
+    },
+    MenuItem("Собакен", Icons.Default.Pets, Color(0xFF6D4C41)) { ctx ->
+        val url = "https://t.me/sobaki_pesik_sobaka"
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { setPackage("org.telegram.messenger") }
         try { ctx.startActivity(intent) } catch (_: ActivityNotFoundException) { ctx.openUrl(url) }
     }
