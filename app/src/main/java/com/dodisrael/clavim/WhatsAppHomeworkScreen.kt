@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,9 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +37,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
@@ -65,6 +70,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private val DEFAULT_HOMEWORK_EXERCISES = listOf(
     "Приучение к кличке",
@@ -365,6 +372,7 @@ fun WhatsAppHomeworkScreen(onBack: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HomeworkEditDialog(
     exercises: List<String>,
@@ -373,6 +381,11 @@ private fun HomeworkEditDialog(
 ) {
     var editList by remember { mutableStateOf(exercises.toList()) }
     var newItemText by remember { mutableStateOf("") }
+
+    val lazyListState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        editList = editList.toMutableList().apply { add(to.index, removeAt(from.index)) }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -384,70 +397,80 @@ private fun HomeworkEditDialog(
             Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                 Text("Редактирование списка", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Spacer(Modifier.height(12.dp))
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState()),
+                LazyColumn(
+                    state = lazyListState,
+                    modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    editList.forEachIndexed { index, item ->
+                    itemsIndexed(editList, key = { index, _ -> index }) { index, item ->
+                        ReorderableItem(reorderState, key = index) { isDragging ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.DragHandle,
+                                    contentDescription = "Переместить",
+                                    tint = Color(0xFFBDBDBD),
+                                    modifier = Modifier
+                                        .longPressDraggableHandle()
+                                        .size(24.dp)
+                                )
+                                OutlinedTextField(
+                                    value = item,
+                                    onValueChange = { newVal ->
+                                        editList = editList.toMutableList().also { it[index] = newVal }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 4
+                                )
+                                IconButton(
+                                    onClick = {
+                                        editList = editList.toMutableList().also { it.removeAt(index) }
+                                    }
+                                ) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = "Удалить",
+                                        tint = Color(0xFFB00020),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        Spacer(Modifier.height(4.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.Top,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
+                            Spacer(Modifier.size(24.dp))
                             OutlinedTextField(
-                                value = item,
-                                onValueChange = { newVal ->
-                                    editList = editList.toMutableList().also { it[index] = newVal }
-                                },
+                                value = newItemText,
+                                onValueChange = { newItemText = it },
+                                placeholder = { Text("Добавить новый пункт") },
                                 modifier = Modifier.weight(1f),
                                 maxLines = 4
                             )
                             IconButton(
                                 onClick = {
-                                    editList = editList.toMutableList().also { it.removeAt(index) }
+                                    if (newItemText.isNotBlank()) {
+                                        editList = editList + newItemText.trim()
+                                        newItemText = ""
+                                    }
                                 },
-                                modifier = Modifier.padding(top = 4.dp)
+                                enabled = newItemText.isNotBlank()
                             ) {
                                 Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = "Удалить",
-                                    tint = Color(0xFFB00020),
-                                    modifier = Modifier.size(20.dp)
+                                    Icons.Default.Add,
+                                    contentDescription = "Добавить",
+                                    tint = Color(0xFF1B7D3A),
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
-                        }
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Top,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = newItemText,
-                            onValueChange = { newItemText = it },
-                            placeholder = { Text("Добавить новый пункт") },
-                            modifier = Modifier.weight(1f),
-                            maxLines = 4
-                        )
-                        IconButton(
-                            onClick = {
-                                if (newItemText.isNotBlank()) {
-                                    editList = editList + newItemText.trim()
-                                    newItemText = ""
-                                }
-                            },
-                            enabled = newItemText.isNotBlank(),
-                            modifier = Modifier.padding(top = 4.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Add,
-                                contentDescription = "Добавить",
-                                tint = Color(0xFF1B7D3A),
-                                modifier = Modifier.size(24.dp)
-                            )
                         }
                     }
                 }
