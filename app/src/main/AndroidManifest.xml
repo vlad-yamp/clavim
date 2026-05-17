@@ -14,7 +14,8 @@
         <package android:name="com.facebook.adsmanager" />
         <package android:name="com.whatsapp" />
         <package android:name="com.whatsapp.w4b" />
-        <intent>
+        <package android:name="com.waze" />
+<intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
         </intent>

@@ -251,17 +251,17 @@ private fun AddressCard(
                     color = Color(0xFF1C1B1F),
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = onWaze, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.Navigation, contentDescription = "Waze", tint = Color(0xFF33CCFF), modifier = Modifier.size(20.dp))
+                IconButton(onClick = onWaze, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Navigation, contentDescription = "Waze", tint = Color(0xFF33CCFF), modifier = Modifier.size(17.dp))
                 }
-                IconButton(onClick = onCopy, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF9E9E9E), modifier = Modifier.size(18.dp))
+                IconButton(onClick = onCopy, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF9E9E9E), modifier = Modifier.size(16.dp))
                 }
-                IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFF0D47A1), modifier = Modifier.size(18.dp))
+                IconButton(onClick = onEdit, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFF0D47A1), modifier = Modifier.size(16.dp))
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFB00020), modifier = Modifier.size(18.dp))
+                IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFB00020), modifier = Modifier.size(16.dp))
                 }
             }
             if (entry.hebrew.isNotBlank()) {
