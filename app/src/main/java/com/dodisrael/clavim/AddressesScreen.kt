@@ -33,14 +33,13 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Navigation
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,9 +47,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,32 +62,27 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import java.net.HttpURLConnection
+import java.net.URL
 
 data class AddressEntry(val name: String, val hebrew: String, val russian: String)
 
-private val DEFAULT_ADDRESSES = listOf(
-    AddressEntry("Вера", "חיפה, דניה 14", "Хайфа ул. Дения 14"),
-    AddressEntry("Вита", "קרית ביאליק, דרך עכו 28", "Кирьят Бялик, дерех Акко 28"),
-    AddressEntry("Женя", "נחל פולג, 5 ,דירה 9 , צור יצחק", ""),
-    AddressEntry("Кузя", "ראשון לציון הכובש 26", "Ришон ле цион ха ковеш 26"),
-    AddressEntry("МВД Акко", "שלום הגליל 1", "Шалом ha Глиль 1"),
-    AddressEntry("Кирьят Моцкин\nПочта и Банк Леуми", "קרית מולצקין משה גושן 90", "Моше Гошен 90"),
-    AddressEntry("Маккаби, доктор Авербах", "קרית מוצקין קדיש לוז 11", "Кирьят Моцкин Кадиш Люз 11")
-)
-
 internal fun loadAddresses(prefs: android.content.SharedPreferences): List<AddressEntry> {
-    val json = prefs.getString("addresses", null) ?: return DEFAULT_ADDRESSES
+    val json = prefs.getString("addresses", null) ?: return emptyList()
     return try {
         val arr = JSONArray(json)
         (0 until arr.length()).map { i ->
             val obj = arr.getJSONObject(i)
             AddressEntry(obj.optString("name"), obj.optString("hebrew"), obj.optString("russian"))
         }
-    } catch (_: Exception) { DEFAULT_ADDRESSES }
+    } catch (_: Exception) { emptyList() }
 }
 
 private fun saveAddresses(prefs: android.content.SharedPreferences, addresses: List<AddressEntry>) {
@@ -99,25 +95,102 @@ private fun saveAddresses(prefs: android.content.SharedPreferences, addresses: L
     prefs.edit().putString("addresses", arr.toString()).apply()
 }
 
+private suspend fun fetchAddressesFromServer(url: String): List<AddressEntry> =
+    withContext(Dispatchers.IO) {
+        val conn = URL("$url?sheet=Адреса").openConnection() as HttpURLConnection
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 15_000
+        try {
+            if (conn.responseCode != 200) throw Exception("HTTP ${conn.responseCode}")
+            val json = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).readText())
+            if (!json.optBoolean("ok", false)) throw Exception(json.optString("error"))
+            val arr = json.getJSONArray("rows")
+            (0 until arr.length()).map { i ->
+                val obj = arr.getJSONObject(i)
+                AddressEntry(obj.optString("name"), obj.optString("hebrew"), obj.optString("russian"))
+            }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+private suspend fun saveAddressesToServer(url: String, addresses: List<AddressEntry>): Boolean =
+    withContext(Dispatchers.IO) {
+        try {
+            val arr = JSONArray()
+            addresses.forEach { a ->
+                arr.put(JSONObject().apply {
+                    put("name", a.name); put("hebrew", a.hebrew); put("russian", a.russian)
+                })
+            }
+            val body = arr.toString().toByteArray(Charsets.UTF_8)
+            val conn = URL("$url?action=replace&sheet=Адреса").openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            conn.doOutput = true
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 15_000
+            conn.outputStream.use { it.write(body) }
+            val json = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).readText())
+            json.optBoolean("ok", false)
+        } catch (_: Exception) { false }
+    }
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AddressesScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("clavim_prefs", Context.MODE_PRIVATE) }
+    val scriptUrl = remember { prefs.getString("addresses_script_url", "") ?: "" }
 
     var addresses by remember { mutableStateOf(loadAddresses(prefs)) }
     var editingIndex by remember { mutableStateOf<Int?>(null) }
     var deletingIndex by remember { mutableStateOf<Int?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
-    var showImportConfirm by remember { mutableStateOf(false) }
-    var selectedIndices by remember { mutableStateOf(setOf<Int>()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var syncError by remember { mutableStateOf("") }
 
     val lazyListState = rememberLazyListState()
     val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
         val newList = addresses.toMutableList().apply { add(to.index, removeAt(from.index)) }
         addresses = newList
         saveAddresses(prefs, newList)
+        if (scriptUrl.isNotBlank()) {
+            scope.launch {
+                saveAddressesToServer(scriptUrl, newList)
+            }
+        }
     }
+
+    fun loadFromServer() {
+        if (scriptUrl.isBlank()) return
+        scope.launch {
+            isLoading = true
+            syncError = ""
+            try {
+                val loaded = fetchAddressesFromServer(scriptUrl)
+                addresses = loaded
+                saveAddresses(prefs, loaded)
+            } catch (e: Exception) {
+                syncError = "Ошибка загрузки: ${e.message}"
+            }
+            isLoading = false
+        }
+    }
+
+    fun applyAndSync(newList: List<AddressEntry>) {
+        addresses = newList
+        saveAddresses(prefs, newList)
+        if (scriptUrl.isNotBlank()) {
+            scope.launch {
+                val ok = saveAddressesToServer(scriptUrl, newList)
+                if (!ok) Toast.makeText(context, "Ошибка сохранения на сервер", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) { loadFromServer() }
 
     if (editingIndex != null || showAddDialog) {
         val initial = editingIndex?.let { addresses[it] } ?: AddressEntry("", "", "")
@@ -128,8 +201,7 @@ fun AddressesScreen(onBack: () -> Unit) {
                     addresses.toMutableList().also { it[editingIndex!!] = updated }
                 else
                     addresses + updated
-                addresses = newList
-                saveAddresses(prefs, newList)
+                applyAndSync(newList)
                 editingIndex = null
                 showAddDialog = false
             },
@@ -145,9 +217,7 @@ fun AddressesScreen(onBack: () -> Unit) {
             confirmButton = {
                 Button(
                     onClick = {
-                        val newList = addresses.toMutableList().also { it.removeAt(idx) }
-                        addresses = newList
-                        saveAddresses(prefs, newList)
+                        applyAndSync(addresses.toMutableList().also { it.removeAt(idx) })
                         deletingIndex = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB00020))
@@ -159,42 +229,6 @@ fun AddressesScreen(onBack: () -> Unit) {
         )
     }
 
-    if (showImportConfirm) {
-        AlertDialog(
-            onDismissRequest = { showImportConfirm = false },
-            title = { Text("Импорт адресов") },
-            text = { Text("Новые адреса из буфера обмена будут добавлены к существующим. Дубликаты (по названию) пропускаются.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val text = cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
-                        try {
-                            val arr = JSONArray(text)
-                            val imported = (0 until arr.length()).map { i ->
-                                val obj = arr.getJSONObject(i)
-                                AddressEntry(obj.optString("name"), obj.optString("hebrew"), obj.optString("russian"))
-                            }
-                            val existingNames = addresses.map { it.name.trim().lowercase() }.toSet()
-                            val toAdd = imported.filter { it.name.trim().lowercase() !in existingNames }
-                            val newList = addresses + toAdd
-                            addresses = newList
-                            saveAddresses(prefs, newList)
-                            Toast.makeText(context, "Добавлено ${toAdd.size} адресов", Toast.LENGTH_SHORT).show()
-                        } catch (_: Exception) {
-                            Toast.makeText(context, "Ошибка: неверный формат данных", Toast.LENGTH_LONG).show()
-                        }
-                        showImportConfirm = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C))
-                ) { Text("Добавить", color = Color.White) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showImportConfirm = false }) { Text("Отмена") }
-            }
-        )
-    }
-
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
             title = "Адреса",
@@ -202,100 +236,91 @@ fun AddressesScreen(onBack: () -> Unit) {
             showBack = true,
             onBack = onBack
         )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Button(
-                onClick = {
-                    val arr = JSONArray()
-                    selectedIndices.sorted().forEach { idx ->
-                        val a = addresses[idx]
-                        arr.put(JSONObject().apply {
-                            put("name", a.name); put("hebrew", a.hebrew); put("russian", a.russian)
-                        })
-                    }
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, arr.toString())
-                        putExtra(Intent.EXTRA_SUBJECT, "Адреса Clavim")
-                    }
-                    context.startActivity(Intent.createChooser(intent, "Поделиться адресами"))
-                },
-                enabled = selectedIndices.isNotEmpty(),
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1))
-            ) {
-                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.size(6.dp))
-                val label = if (selectedIndices.isEmpty()) "Поделиться" else "Послать (${selectedIndices.size})"
-                Text(label, fontSize = 13.sp)
-            }
-            Button(
-                onClick = { showImportConfirm = true },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C))
-            ) {
-                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.size(6.dp))
-                Text("Импорт", fontSize = 13.sp)
-            }
-        }
-        Box(modifier = Modifier.fillMaxSize()) {
-            LazyColumn(
-                state = lazyListState,
+
+        if (syncError.isNotBlank()) {
+            Text(
+                syncError,
+                fontSize = 12.sp,
+                color = Color(0xFFB00020),
                 modifier = Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.navigationBars),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                itemsIndexed(addresses, key = { _, item -> item.name + item.hebrew }) { idx, addr ->
-                    ReorderableItem(reorderState, key = addr.name + addr.hebrew) { isDragging ->
-                        AddressCard(
-                            entry = addr,
-                            isDragging = isDragging,
-                            isChecked = idx in selectedIndices,
-                            onCheckedChange = { checked ->
-                                selectedIndices = if (checked) selectedIndices + idx else selectedIndices - idx
-                            },
-                            dragHandleModifier = Modifier.longPressDraggableHandle(),
-                            onEdit = { editingIndex = idx },
-                            onDelete = { deletingIndex = idx },
-                            onCopy = {
-                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val text = listOf(addr.hebrew, addr.russian).filter { it.isNotBlank() }.joinToString("\n")
-                                cm.setPrimaryClip(ClipData.newPlainText("", text))
-                                Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
-                            },
-                            onWaze = {
-                                val query = addr.hebrew.ifBlank { addr.russian }
-                                val url = "https://waze.com/ul?q=${Uri.encode(query)}&navigate=yes"
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                                    setPackage("com.waze")
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+        }
+
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (isLoading && addresses.isEmpty()) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = Color(0xFFAD1457)
+                )
+            } else {
+                LazyColumn(
+                    state = lazyListState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.navigationBars),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    itemsIndexed(addresses, key = { _, item -> item.name + item.hebrew }) { idx, addr ->
+                        ReorderableItem(reorderState, key = addr.name + addr.hebrew) { isDragging ->
+                            AddressCard(
+                                entry = addr,
+                                isDragging = isDragging,
+                                dragHandleModifier = Modifier.longPressDraggableHandle(),
+                                onEdit = { editingIndex = idx },
+                                onDelete = { deletingIndex = idx },
+                                onCopy = {
+                                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val text = listOf(addr.hebrew, addr.russian).filter { it.isNotBlank() }.joinToString("\n")
+                                    cm.setPrimaryClip(ClipData.newPlainText("", text))
+                                    Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+                                },
+                                onWaze = {
+                                    val query = addr.hebrew.ifBlank { addr.russian }
+                                    val url = "https://waze.com/ul?q=${Uri.encode(query)}&navigate=yes"
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                        setPackage("com.waze")
+                                    }
+                                    try {
+                                        context.startActivity(intent)
+                                    } catch (_: ActivityNotFoundException) {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                    }
                                 }
-                                try {
-                                    context.startActivity(intent)
-                                } catch (_: ActivityNotFoundException) {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                }
-                            }
-                        )
+                            )
+                        }
                     }
+                    item { Spacer(Modifier.height(80.dp)) }
                 }
-                item { Spacer(Modifier.height(80.dp)) }
             }
-            FloatingActionButton(
-                onClick = { showAddDialog = true },
+
+            Row(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(16.dp)
                     .windowInsetsPadding(WindowInsets.navigationBars),
-                containerColor = Color(0xFF0D47A1)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Добавить", tint = Color.White)
+                if (scriptUrl.isNotBlank()) {
+                    FloatingActionButton(
+                        onClick = { loadFromServer() },
+                        containerColor = Color(0xFF757575)
+                    ) {
+                        if (isLoading)
+                            CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                        else
+                            Icon(Icons.Default.Refresh, contentDescription = "Обновить", tint = Color.White)
+                    }
+                }
+                FloatingActionButton(
+                    onClick = { showAddDialog = true },
+                    containerColor = Color(0xFF0D47A1)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Добавить", tint = Color.White)
+                }
             }
         }
     }
@@ -305,8 +330,6 @@ fun AddressesScreen(onBack: () -> Unit) {
 private fun AddressCard(
     entry: AddressEntry,
     isDragging: Boolean,
-    isChecked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
     dragHandleModifier: Modifier,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -316,9 +339,7 @@ private fun AddressCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isChecked) Color(0xFFE3F2FD) else Color.White
-        ),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(if (isDragging) 8.dp else 2.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -326,11 +347,6 @@ private fun AddressCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Checkbox(
-                    checked = isChecked,
-                    onCheckedChange = onCheckedChange,
-                    modifier = Modifier.size(28.dp)
-                )
                 Icon(
                     Icons.Default.DragHandle,
                     contentDescription = "Переместить",

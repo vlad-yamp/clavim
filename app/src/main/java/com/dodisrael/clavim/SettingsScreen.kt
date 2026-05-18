@@ -51,8 +51,10 @@ fun SettingsScreen(onBack: () -> Unit) {
     var apiKey by remember { mutableStateOf(prefs.getString("openai_api_key", "") ?: "") }
     var voiceAutoSpeak by remember { mutableStateOf(prefs.getBoolean("voice_auto_speak", true)) }
     var appsScriptUrl by remember { mutableStateOf(prefs.getString("apps_script_url", "") ?: "") }
+    var addressesScriptUrl by remember { mutableStateOf(prefs.getString("addresses_script_url", "") ?: "") }
     var keySaved by remember { mutableStateOf(false) }
     var scriptUrlSaved by remember { mutableStateOf(false) }
+    var addressesScriptUrlSaved by remember { mutableStateOf(false) }
     var keyVisible by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -152,6 +154,45 @@ fun SettingsScreen(onBack: () -> Unit) {
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A))
                     ) {
                         Text(if (scriptUrlSaved) "Сохранено ✓" else "Сохранить", color = Color.White)
+                    }
+                }
+            }
+
+            // Addresses Script URL
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("URL Apps Script (Google Sheets)", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Text(
+                        "Общий скрипт для синхронизации данных между устройствами. Используется для адресов и других таблиц.",
+                        fontSize = 13.sp, color = Color(0xFF757575)
+                    )
+                    OutlinedTextField(
+                        value = addressesScriptUrl,
+                        onValueChange = { addressesScriptUrl = it; addressesScriptUrlSaved = false },
+                        placeholder = { Text("https://script.google.com/macros/s/…/exec") },
+                        singleLine = false,
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            prefs.edit().putString("addresses_script_url", addressesScriptUrl.trim()).apply()
+                            addressesScriptUrl = addressesScriptUrl.trim()
+                            addressesScriptUrlSaved = true
+                        },
+                        enabled = addressesScriptUrl.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFAD1457))
+                    ) {
+                        Text(if (addressesScriptUrlSaved) "Сохранено ✓" else "Сохранить", color = Color.White)
                     }
                 }
             }
