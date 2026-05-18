@@ -1,10 +1,10 @@
 package com.dodisrael.clavim
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -16,7 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.dodisrael.clavim.ui.theme.ClavimTheme
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -48,7 +48,7 @@ fun AppContent() {
 
     BackHandler(enabled = screen != Screen.MAIN) {
         screen = when (screen) {
-            Screen.EXCHANGE_RATES, Screen.OUR_DATA, Screen.ADDRESSES -> Screen.INFO
+            Screen.EXCHANGE_RATES, Screen.ADDRESSES, Screen.DATA_ENTRIES -> Screen.INFO
             Screen.TELEGRAM_FOSTERING -> Screen.TELEGRAM
             Screen.WHATSAPP_REMINDER, Screen.WHATSAPP_HOMEWORK, Screen.WHATSAPP_DOG_MESSAGE,
             Screen.WHATSAPP_TRANSLATION, Screen.WHATSAPP_PICKUP -> Screen.WHATSAPP
@@ -63,12 +63,12 @@ fun AppContent() {
         Screen.INFO                -> InfoMenuScreen(
             onBack = { screen = Screen.MAIN },
             onExchangeRatesClick = { screen = Screen.EXCHANGE_RATES },
-            onOurDataClick = { screen = Screen.OUR_DATA },
             onAddressesClick = { screen = Screen.ADDRESSES },
+            onDataEntriesClick = { screen = Screen.DATA_ENTRIES },
             onWebViewClick = { url, title -> openWebView(url, title, Screen.INFO) }
         )
         Screen.ADDRESSES           -> AddressesScreen(onBack = { screen = Screen.INFO })
-        Screen.OUR_DATA            -> OurDataScreen(onBack = { screen = Screen.INFO })
+        Screen.DATA_ENTRIES        -> DataEntriesScreen(onBack = { screen = Screen.INFO })
         Screen.EXCHANGE_RATES      -> ExchangeRatesScreen(onBack = { screen = Screen.INFO })
         Screen.TELEGRAM_FOSTERING  -> TelegramFosteringScreen(onBack = { screen = Screen.TELEGRAM })
         Screen.ADVERTISING         -> AdvertisingMenuScreen(

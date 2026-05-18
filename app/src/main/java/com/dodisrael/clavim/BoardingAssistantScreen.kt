@@ -105,7 +105,7 @@ private const val CLIENTS_CSV_URL =
 private const val TRAINING_CSV_URL =
     "https://docs.google.com/spreadsheets/d/1k7usk6ZFkPL7x6-CFFfAr87kQvRkI9TBCZZqJFej0X4/export?format=csv&gid=0"
 
-private enum class TableType { BOARDING, CLIENTS, TRAINING, PHOTOS, RECORD_BOOKING, NAVIGATION }
+private enum class TableType { BOARDING, CLIENTS, TRAINING, PHOTOS, RECORD_BOOKING, NAVIGATION, DATA }
 
 private data class ClassifyResult(
     val tableType: TableType,
@@ -309,6 +309,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
                     TableType.PHOTOS         -> "Фото из канала"
                     TableType.RECORD_BOOKING -> "Запись на передержку"
                     TableType.NAVIGATION     -> "Навигация"
+                    TableType.DATA           -> "Данные"
                 }
                 loadingStatus = "Загружаю «$tableLabel»..."
 
@@ -340,6 +341,17 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
                                 }
                                 html to "Открываю маршрут к $displayName"
                             }
+                        }
+                    }
+                    TableType.DATA -> {
+                        loadingStatus = "Загружаю данные..."
+                        val dataEntries = loadDataEntries(prefs)
+                        if (dataEntries.isEmpty()) {
+                            "<p>Список данных пуст. Добавьте записи в разделе Информация → Данные.</p>" to ""
+                        } else {
+                            loadingStatus = "Спрашиваю ChatGPT..."
+                            val entriesText = dataEntries.joinToString("\n") { "${it.key}: ${it.value}" }
+                            askTableAssistant(question, entriesText, "личные данные и заметки (номера, коды, карты, документы, реквизиты)", apiKey)
                         }
                     }
                     TableType.PHOTOS -> {
@@ -856,6 +868,7 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
 - RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:add — ЗАПИСЬ собаки на передержку (ключевые слова: запиши, запишите, добавь, забронируй)
 - RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:delete — УДАЛЕНИЕ с передержки (ключевые слова: удали, удалить, убери, сними, отмени)
 - NAVIGATION:<имя> — маршрут к человеку из адресной книги (как доехать, как проехать, маршрут к, куда ехать к)
+- DATA:<запрос> — поиск в личных данных (номер, код, карта, документ, реквизиты, что не подходит под другие категории)
 
 Для PHOTOS: кличка в именительном падеже.
 Для RECORD_BOOKING: кличка в именительном падеже, даты в формате ДД.ММ.ГГГГ.
@@ -910,6 +923,8 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
                 ClassifyResult(TableType.PHOTOS, dogName = content.substringAfter(":").trim())
             content.startsWith("NAVIGATION:", ignoreCase = true) ->
                 ClassifyResult(TableType.NAVIGATION, dogName = content.substringAfter(":").trim())
+            content.startsWith("DATA:", ignoreCase = true) ->
+                ClassifyResult(TableType.DATA, dogName = content.substringAfter(":").trim())
             content.contains("CLIENTS", ignoreCase = true)  -> ClassifyResult(TableType.CLIENTS)
             content.contains("TRAINING", ignoreCase = true) -> ClassifyResult(TableType.TRAINING)
             else                                             -> ClassifyResult(TableType.BOARDING)
