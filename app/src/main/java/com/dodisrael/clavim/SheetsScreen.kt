@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Bed
 import androidx.compose.material.icons.filled.EventAvailable
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -66,6 +67,9 @@ private fun buildSheetsMenuItems(): List<MenuItem> = listOf(
     },
     MenuItem("Баланс", Icons.Default.AccountBalance, Color(0xFF6A1B9A)) { ctx ->
         ctx.openInSheets("https://docs.google.com/spreadsheets/d/1bF33tKU_BC7a-lSjT2FtCrgWqBFXzQcnDSI4Hts_Pds/edit?gid=951715807#gid=951715807")
+    },
+    MenuItem("Clavim", Icons.Default.GridOn, Color(0xFFAD1457)) { ctx ->
+        ctx.openInSheets("https://docs.google.com/spreadsheets/d/1zoXmop2UWsBx4792N8J42CcpDHXAQAQEtr3WMKV2GBQ/edit?gid=1280945559#gid=1280945559")
     }
 )
 
