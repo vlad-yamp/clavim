@@ -116,7 +116,10 @@ private data class ClassifyResult(
     val dogName: String? = null,
     val startDate: String? = null,
     val endDate: String? = null,
-    val action: String = "add"
+    val action: String = "add",
+    val newDogPresetName: String? = null,
+    val newDogPresetBreed: String? = null,
+    val newDogPresetOwner: String? = null
 )
 
 private data class PendingBooking(
@@ -127,7 +130,13 @@ private data class PendingBooking(
     val action: String = "add"
 )
 
-private data class NewDogBookingPending(val startDate: String, val endDate: String)
+private data class NewDogBookingPending(
+    val startDate: String,
+    val endDate: String,
+    val presetName: String = "",
+    val presetBreed: String = "",
+    val presetOwner: String = ""
+)
 
 @Composable
 fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> Unit = {}) {
@@ -387,7 +396,13 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
                         if (dogName == null || startDate == null || endDate == null) {
                             "<p>Не удалось распознать кличку или даты. Попробуйте ещё раз.</p>" to ""
                         } else if (dogName.equals("НОВАЯ_СОБАКА", ignoreCase = true)) {
-                            pendingNewDogBooking = NewDogBookingPending(startDate, endDate)
+                            pendingNewDogBooking = NewDogBookingPending(
+                                startDate  = startDate,
+                                endDate    = endDate,
+                                presetName  = result.newDogPresetName ?: "",
+                                presetBreed = result.newDogPresetBreed ?: "",
+                                presetOwner = result.newDogPresetOwner ?: ""
+                            )
                             "" to ""
                         } else {
                             loadingStatus = "Ищу собаку в базе клиентов..."
@@ -512,8 +527,11 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
 
     pendingNewDogBooking?.let { pending ->
         NewDogFormDialog(
-            startDate = pending.startDate,
-            endDate = pending.endDate,
+            startDate   = pending.startDate,
+            endDate     = pending.endDate,
+            presetName  = pending.presetName,
+            presetBreed = pending.presetBreed,
+            presetOwner = pending.presetOwner,
             onConfirm = { dogNameField, breedField, ownerField, phoneField ->
                 pendingNewDogBooking = null
                 scope.launch {
@@ -895,12 +913,15 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
 private fun NewDogFormDialog(
     startDate: String,
     endDate: String,
+    presetName: String = "",
+    presetBreed: String = "",
+    presetOwner: String = "",
     onConfirm: (dogName: String, breed: String, owner: String, phone: String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var dogName by remember { mutableStateOf("") }
-    var breed   by remember { mutableStateOf("") }
-    var owner   by remember { mutableStateOf("") }
+    var dogName by remember { mutableStateOf(presetName) }
+    var breed   by remember { mutableStateOf(presetBreed) }
+    var owner   by remember { mutableStateOf(presetOwner) }
     var phone   by remember { mutableStateOf("") }
     val context = LocalContext.current
 
@@ -1033,8 +1054,9 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
 - CLIENTS — вопрос про клиентов (контакты, телефоны, имена хозяев)
 - TRAINING — вопрос про занятия/дрессировку (расписание, посещаемость)
 - PHOTOS:<кличка> — запрос на показ фото собаки (покажи, хочу посмотреть)
-- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:add — ЗАПИСЬ собаки на передержку (ключевые слова: запиши, запишите, добавь, забронируй). Если собака новая/неизвестная/без клички — кличка = НОВАЯ_СОБАКА
-- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:delete — УДАЛЕНИЕ с передержки (ключевые слова: удали, удалить, убери, сними, отмени)
+- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:add — ЗАПИСЬ существующей собаки (ключевые слова: запиши, добавь, забронируй). Использовать ТОЛЬКО если нет слов "новая/новый/незнакомая".
+- RECORD_BOOKING:НОВАЯ_СОБАКА:<дата_начала>:<дата_конца>:add:<кличка>|<порода>|<хозяин> — ЗАПИСЬ НОВОЙ собаки (только если есть "новая", "новый", "незнакомая", "без клички"). После последнего ':' три поля через '|' в строгом порядке кличка|порода|хозяин — независимо от порядка в речи. Если поле не упомянуто — пустая строка.
+- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:delete — УДАЛЕНИЕ с передержки (ключевые слова: удали, убери, сними, отмени)
 - NAVIGATION:<имя> — маршрут к человеку из адресной книги (как доехать, как проехать, маршрут к, куда ехать к)
 - DATA:<запрос> — поиск в личных данных (номер, код, карта, документ, реквизиты, что не подходит под другие категории)
 
@@ -1044,7 +1066,10 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
 
 Примеры:
 "покажи Ричарда" → PHOTOS:Ричард
-"запиши новую собаку с 10 по 15 июня" → RECORD_BOOKING:НОВАЯ_СОБАКА:10.06.2026:15.06.2026:add
+"запиши новую собаку с 10 по 15 июня" → RECORD_BOOKING:НОВАЯ_СОБАКА:10.06.2026:15.06.2026:add:||
+"запиши новую собаку Барон с 10 по 15 июня" → RECORD_BOOKING:НОВАЯ_СОБАКА:10.06.2026:15.06.2026:add:Барон||
+"запиши нового клиента Тузик хозяин Иван порода метис с 10 по 20 мая" → RECORD_BOOKING:НОВАЯ_СОБАКА:10.05.2026:20.05.2026:add:Тузик|метис|Иван
+"запиши нового клиента Барон, лабрадор, хозяин Петя с 10 по 15 июня" → RECORD_BOOKING:НОВАЯ_СОБАКА:10.06.2026:15.06.2026:add:Барон|Лабрадор|Петя
 "запиши Мэри с 10 по 15 июня" → RECORD_BOOKING:Мэри:10.06.2026:15.06.2026:add
 "запишите Бобика на передержку с 1 по 5 марта" → RECORD_BOOKING:Бобик:01.03.2027:05.03.2027:add
 "удали Мэри с 10 по 15 июня" → RECORD_BOOKING:Мэри:10.06.2026:15.06.2026:delete
@@ -1080,12 +1105,18 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
         when {
             content.startsWith("RECORD_BOOKING:", ignoreCase = true) -> {
                 val parts = content.split(":")
+                val dogName = parts.getOrNull(1)?.trim()
+                val isNew = dogName.equals("НОВАЯ_СОБАКА", ignoreCase = true)
+                val sub = if (isNew) parts.getOrNull(5)?.split("|") else null
                 ClassifyResult(
                     tableType = TableType.RECORD_BOOKING,
-                    dogName   = parts.getOrNull(1)?.trim(),
+                    dogName   = dogName,
                     startDate = parts.getOrNull(2)?.trim(),
                     endDate   = parts.getOrNull(3)?.trim(),
-                    action    = if (parts.getOrNull(4)?.trim().equals("delete", ignoreCase = true)) "delete" else "add"
+                    action    = if (parts.getOrNull(4)?.trim().equals("delete", ignoreCase = true)) "delete" else "add",
+                    newDogPresetName  = sub?.getOrNull(0)?.trim()?.takeIf { it.isNotBlank() },
+                    newDogPresetBreed = sub?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() },
+                    newDogPresetOwner = sub?.getOrNull(2)?.trim()?.takeIf { it.isNotBlank() }
                 )
             }
             content.startsWith("PHOTOS:", ignoreCase = true) ->
