@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -56,6 +57,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.Composable
@@ -117,6 +122,7 @@ private data class ClassifyResult(
     val startDate: String? = null,
     val endDate: String? = null,
     val action: String = "add",
+    val clarification: String? = null,
     val newDogPresetName: String? = null,
     val newDogPresetBreed: String? = null,
     val newDogPresetOwner: String? = null
@@ -127,6 +133,14 @@ private data class PendingBooking(
     val startDate: String,
     val endDate: String,
     val candidates: List<String>,
+    val action: String = "add"
+)
+
+private data class ExistingDogBookingPending(
+    val dogName: String,
+    val startDate: String,
+    val endDate: String,
+    val clarification: String = "",
     val action: String = "add"
 )
 
@@ -158,6 +172,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
     var fullScreenPhotoIndex by remember { mutableStateOf<Int?>(null) }
     var galleryUrls by remember { mutableStateOf<List<String>>(emptyList()) }
     var pendingBooking by remember { mutableStateOf<PendingBooking?>(null) }
+    var pendingExistingDogBooking by remember { mutableStateOf<ExistingDogBookingPending?>(null) }
     var pendingNewDogBooking by remember { mutableStateOf<NewDogBookingPending?>(null) }
     var shouldAutoLaunchMic by remember { mutableStateOf(false) }
     var bookingSuccess by remember { mutableStateOf(false) }
@@ -397,50 +412,22 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
                             "<p>Не удалось распознать кличку или даты. Попробуйте ещё раз.</p>" to ""
                         } else if (dogName.equals("НОВАЯ_СОБАКА", ignoreCase = true)) {
                             pendingNewDogBooking = NewDogBookingPending(
-                                startDate  = startDate,
-                                endDate    = endDate,
+                                startDate   = startDate,
+                                endDate     = endDate,
                                 presetName  = result.newDogPresetName ?: "",
                                 presetBreed = result.newDogPresetBreed ?: "",
                                 presetOwner = result.newDogPresetOwner ?: ""
                             )
                             "" to ""
                         } else {
-                            loadingStatus = "Ищу собаку в базе клиентов..."
-                            val csv = fetchCsv(CLIENTS_CSV_URL)
-                            val candidates = findDogCandidates(csv, dogName)
-                            when {
-                                candidates.isEmpty() ->
-                                    "<p>Собака с кличкой <b>«$dogName»</b> не найдена в базе клиентов.</p>" to
-                                    "Собака $dogName не найдена в базе"
-                                candidates.size == 1 -> {
-                                    val isDelete = result.action == "delete"
-                                    loadingStatus = if (isDelete) "Удаляю из таблицы..." else "Записываю в таблицу..."
-                                    val webUrl = prefs.getString("apps_script_url", "") ?: ""
-                                    val success = appendBookingToSheet(startDate, endDate, candidates[0], webUrl, result.action)
-                                    if (success) {
-                                        bookingSuccess = true
-                                        if (isDelete)
-                                            "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ Удалено!</p>" +
-                                            "<p>${candidates[0]}</p>" +
-                                            "<p>📅 с <b>$startDate</b> по <b>$endDate</b></p>" to "Удалено!"
-                                        else
-                                            "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ Записано!</p>" +
-                                            "<p>${candidates[0]}</p>" +
-                                            "<p>📅 с <b>$startDate</b> по <b>$endDate</b></p>" to "Записано!"
-                                    } else {
-                                        "<p style='color:#D32F2F'>❌ Ошибка. Проверьте URL Apps Script в настройках.</p>" to ""
-                                    }
-                                }
-                                else -> {
-                                    val listHtml = candidates.joinToString("") { "<li>$it</li>" }
-                                    pendingBooking = PendingBooking(dogName, startDate, endDate, candidates, result.action)
-                                    shouldAutoLaunchMic = true
-                                    "<p>Найдено <b>${candidates.size}</b> собаки с кличкой <b>«$dogName»</b>:</p>" +
-                                    "<ul>$listHtml</ul>" +
-                                    "<p>🎤 Уточните породу или хозяина...</p>" to
-                                    "Найдено ${candidates.size} собаки с кличкой $dogName. Уточните породу или хозяина."
-                                }
-                            }
+                            pendingExistingDogBooking = ExistingDogBookingPending(
+                                dogName       = dogName,
+                                startDate     = startDate,
+                                endDate       = endDate,
+                                clarification = result.clarification ?: "",
+                                action        = result.action
+                            )
+                            "" to ""
                         }
                     }
                     TableType.BOARDING -> {
@@ -492,7 +479,8 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
                 question = spoken
                 answer = ""
                 errorText = ""
-                // не вызываем askQuestion() — пользователь проверяет текст и жмёт «Выполнить»
+                voiceComment = ""
+                askQuestion()
             }
         }
     }
@@ -525,6 +513,88 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
         }
     }
 
+    pendingExistingDogBooking?.let { pending ->
+        ExistingDogFormDialog(
+            pending = pending,
+            onConfirm = { dogNameField, clarificationField, startD, endD ->
+                pendingExistingDogBooking = null
+                scope.launch {
+                    isLoading = true
+                    val isDelete = pending.action == "delete"
+                    loadingStatus = "Ищу в базе клиентов..."
+                    try {
+                        val csv = fetchCsv(CLIENTS_CSV_URL)
+                        val candidates = findDogCandidates(csv, dogNameField)
+                        val (html, voice) = when {
+                            candidates.isEmpty() ->
+                                "<p>Собака <b>«$dogNameField»</b> не найдена в базе клиентов.</p>" to
+                                "Собака $dogNameField не найдена в базе"
+                            candidates.size == 1 -> {
+                                loadingStatus = if (isDelete) "Удаляю из таблицы..." else "Записываю в таблицу..."
+                                val webUrl = prefs.getString("apps_script_url", "") ?: ""
+                                val success = appendBookingToSheet(startD, endD, candidates[0], webUrl, pending.action)
+                                if (success) {
+                                    bookingSuccess = true
+                                    lastTableType = TableType.RECORD_BOOKING
+                                    val label = if (isDelete) "Удалено" else "Записано"
+                                    "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ $label!</p>" +
+                                    "<p>${candidates[0]}</p>" +
+                                    "<p>📅 с <b>$startD</b> по <b>$endD</b></p>" to "$label!"
+                                } else {
+                                    "<p style='color:#D32F2F'>❌ Ошибка. Проверьте URL Apps Script в настройках.</p>" to ""
+                                }
+                            }
+                            else -> {
+                                val selected = if (clarificationField.isNotBlank()) {
+                                    loadingStatus = "Уточняю выбор..."
+                                    disambiguateDog(clarificationField, candidates, apiKey)
+                                } else null
+                                if (selected != null) {
+                                    loadingStatus = if (isDelete) "Удаляю из таблицы..." else "Записываю в таблицу..."
+                                    val webUrl = prefs.getString("apps_script_url", "") ?: ""
+                                    val success = appendBookingToSheet(startD, endD, selected, webUrl, pending.action)
+                                    if (success) {
+                                        bookingSuccess = true
+                                        lastTableType = TableType.RECORD_BOOKING
+                                        val label = if (isDelete) "Удалено" else "Записано"
+                                        "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ $label!</p>" +
+                                        "<p>$selected</p>" +
+                                        "<p>📅 с <b>$startD</b> по <b>$endD</b></p>" to "$label!"
+                                    } else {
+                                        "<p style='color:#D32F2F'>❌ Ошибка. Проверьте URL Apps Script в настройках.</p>" to ""
+                                    }
+                                } else {
+                                    val listHtml = candidates.joinToString("") { "<li>$it</li>" }
+                                    pendingBooking = PendingBooking(dogNameField, startD, endD, candidates, pending.action)
+                                    shouldAutoLaunchMic = true
+                                    "<p>Найдено <b>${candidates.size}</b> собаки с кличкой <b>«$dogNameField»</b>:</p>" +
+                                    "<ul>$listHtml</ul>" +
+                                    "<p>🎤 Уточните породу или хозяина...</p>" to
+                                    "Найдено ${candidates.size} собаки. Уточните породу или хозяина."
+                                }
+                            }
+                        }
+                        if (voice.isNotBlank() && apiKey.isNotBlank() && voiceAutoSpeak) {
+                            loadingStatus = "Подготовка голоса..."
+                            pendingTtsBytes.value = withContext(Dispatchers.IO) { downloadTtsAudio(formatPhoneNumbers(voice.trim()), apiKey) }
+                        }
+                        answer = html
+                        voiceComment = voice
+                        if (voice.isNotBlank() && voiceAutoSpeak) speak(voice)
+                    } catch (e: Exception) {
+                        errorText = "Ошибка: ${e.message}"
+                    }
+                    isLoading = false
+                    loadingStatus = ""
+                }
+            },
+            onDismiss = {
+                pendingExistingDogBooking = null
+                answer = "<p>Запись отменена.</p>"
+            }
+        )
+    }
+
     pendingNewDogBooking?.let { pending ->
         NewDogFormDialog(
             startDate   = pending.startDate,
@@ -532,7 +602,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
             presetName  = pending.presetName,
             presetBreed = pending.presetBreed,
             presetOwner = pending.presetOwner,
-            onConfirm = { dogNameField, breedField, ownerField, phoneField ->
+            onConfirm = { dogNameField, breedField, ownerField, phoneField, startD, endD ->
                 pendingNewDogBooking = null
                 scope.launch {
                     isLoading = true
@@ -540,13 +610,13 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
                     val parts = listOf(dogNameField, breedField, ownerField, phoneField).filter { it.isNotBlank() }
                     val info = if (parts.isEmpty()) "Новая собака" else parts.joinToString(", ")
                     val webUrl = prefs.getString("apps_script_url", "") ?: ""
-                    val success = appendBookingToSheet(pending.startDate, pending.endDate, info, webUrl, "add")
+                    val success = appendBookingToSheet(startD, endD, info, webUrl, "add")
                     if (success) {
                         bookingSuccess = true
                         lastTableType = TableType.RECORD_BOOKING
                         answer = "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ Записано!</p>" +
                             "<p>$info</p>" +
-                            "<p>📅 с <b>${pending.startDate}</b> по <b>${pending.endDate}</b></p>"
+                            "<p>📅 с <b>$startD</b> по <b>$endD</b></p>"
                         voiceComment = "Записано!"
                         if (apiKey.isNotBlank() && voiceAutoSpeak) {
                             pendingTtsBytes.value = withContext(Dispatchers.IO) { downloadTtsAudio("Записано!", apiKey) }
@@ -909,6 +979,85 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExistingDogFormDialog(
+    pending: ExistingDogBookingPending,
+    onConfirm: (dogName: String, clarification: String, startDate: String, endDate: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var dogName       by remember { mutableStateOf(pending.dogName) }
+    var clarification by remember { mutableStateOf(pending.clarification) }
+    var startDateStr  by remember { mutableStateOf(pending.startDate) }
+    var endDateStr    by remember { mutableStateOf(pending.endDate) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    val isDelete = pending.action == "delete"
+
+    if (showDatePicker) {
+        DateRangePickerModal(
+            initialStartDate = startDateStr,
+            initialEndDate = endDateStr,
+            onConfirm = { s, e -> startDateStr = s; endDateStr = e; showDatePicker = false },
+            onDismiss = { showDatePicker = false }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                if (isDelete) "Удалить с передержки" else "Записать на передержку",
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
+                OutlinedButton(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val label = if (startDateStr.isBlank() && endDateStr.isBlank()) "Выбрать даты"
+                                else if (startDateStr.isBlank()) "— $endDateStr"
+                                else if (endDateStr.isBlank()) "$startDateStr —"
+                                else "$startDateStr  —  $endDateStr"
+                    Text(label, fontSize = 14.sp)
+                }
+
+                OutlinedTextField(
+                    value = dogName,
+                    onValueChange = { dogName = it },
+                    label = { Text("Кличка") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = clarification,
+                    onValueChange = { clarification = it },
+                    label = { Text("Уточнение") },
+                    placeholder = { Text("порода, хозяин...", fontSize = 13.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(dogName, clarification, startDateStr, endDateStr) },
+                colors = if (isDelete) ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+                         else ButtonDefaults.buttonColors()
+            ) {
+                Text(if (isDelete) "Удалить" else "Записать")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) { Text("Отмена") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NewDogFormDialog(
     startDate: String,
@@ -916,14 +1065,26 @@ private fun NewDogFormDialog(
     presetName: String = "",
     presetBreed: String = "",
     presetOwner: String = "",
-    onConfirm: (dogName: String, breed: String, owner: String, phone: String) -> Unit,
+    onConfirm: (dogName: String, breed: String, owner: String, phone: String, startDate: String, endDate: String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var dogName by remember { mutableStateOf(presetName) }
-    var breed   by remember { mutableStateOf(presetBreed) }
-    var owner   by remember { mutableStateOf(presetOwner) }
-    var phone   by remember { mutableStateOf("") }
+    var dogName       by remember { mutableStateOf(presetName) }
+    var breed         by remember { mutableStateOf(presetBreed) }
+    var owner         by remember { mutableStateOf(presetOwner) }
+    var phone         by remember { mutableStateOf("") }
+    var startDateStr  by remember { mutableStateOf(startDate) }
+    var endDateStr    by remember { mutableStateOf(endDate) }
+    var showDatePicker by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    if (showDatePicker) {
+        DateRangePickerModal(
+            initialStartDate = startDateStr,
+            initialEndDate = endDateStr,
+            onConfirm = { s, e -> startDateStr = s; endDateStr = e; showDatePicker = false },
+            onDismiss = { showDatePicker = false }
+        )
+    }
 
     val contactPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -945,14 +1106,21 @@ private fun NewDogFormDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Новая собака", fontWeight = FontWeight.SemiBold) },
+        title = { Text("Записать новую собаку", fontWeight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "Даты: с $startDate по $endDate",
-                    fontSize = 13.sp,
-                    color = Color(0xFF757575)
-                )
+
+                OutlinedButton(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val label = if (startDateStr.isBlank() && endDateStr.isBlank()) "Выбрать даты"
+                                else if (startDateStr.isBlank()) "— $endDateStr"
+                                else if (endDateStr.isBlank()) "$startDateStr —"
+                                else "$startDateStr  —  $endDateStr"
+                    Text(label, fontSize = 14.sp)
+                }
+
                 OutlinedTextField(
                     value = dogName,
                     onValueChange = { dogName = it },
@@ -1011,7 +1179,7 @@ private fun NewDogFormDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(dogName, breed, owner, phone) }) {
+            Button(onClick = { onConfirm(dogName, breed, owner, phone, startDateStr, endDateStr) }) {
                 Text("Продолжить")
             }
         },
@@ -1029,6 +1197,65 @@ private fun normalizeIsraeliPhone(raw: String): String {
         digits.startsWith("972") && digits.length > 3 -> "0" + digits.drop(3)
         else -> digits
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateRangePickerModal(
+    initialStartDate: String,
+    initialEndDate: String,
+    onConfirm: (startDate: String, endDate: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val state = rememberDateRangePickerState(
+        initialSelectedStartDateMillis = parseDMYToMillis(initialStartDate),
+        initialSelectedEndDateMillis   = parseDMYToMillis(initialEndDate),
+        initialDisplayedMonthMillis    = parseDMYToMillis(initialStartDate)
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = {
+                    val start = state.selectedStartDateMillis?.let { millisToDMY(it) } ?: initialStartDate
+                    val end   = state.selectedEndDateMillis?.let   { millisToDMY(it) } ?: initialEndDate
+                    onConfirm(start, end)
+                },
+                enabled = state.selectedStartDateMillis != null && state.selectedEndDateMillis != null
+            ) { Text("OK") }
+        },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Отмена") } }
+    ) {
+        DateRangePicker(
+            state = state,
+            showModeToggle = false,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(500.dp)
+        )
+    }
+}
+
+private fun parseDMYToMillis(date: String): Long? {
+    val p = date.split(".")
+    if (p.size != 3) return null
+    val day   = p[0].toIntOrNull() ?: return null
+    val month = p[1].toIntOrNull() ?: return null
+    val year  = p[2].toIntOrNull() ?: return null
+    return Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply {
+        set(year, month - 1, day, 0, 0, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+}
+
+private fun millisToDMY(millis: Long): String {
+    val cal = Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+    cal.timeInMillis = millis
+    return "%02d.%02d.%04d".format(
+        cal.get(Calendar.DAY_OF_MONTH),
+        cal.get(Calendar.MONTH) + 1,
+        cal.get(Calendar.YEAR)
+    )
 }
 
 private suspend fun fetchCsv(url: String): String = withContext(Dispatchers.IO) {
@@ -1054,9 +1281,9 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
 - CLIENTS — вопрос про клиентов (контакты, телефоны, имена хозяев)
 - TRAINING — вопрос про занятия/дрессировку (расписание, посещаемость)
 - PHOTOS:<кличка> — запрос на показ фото собаки (покажи, хочу посмотреть)
-- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:add — ЗАПИСЬ существующей собаки (ключевые слова: запиши, добавь, забронируй). Использовать ТОЛЬКО если нет слов "новая/новый/незнакомая".
-- RECORD_BOOKING:НОВАЯ_СОБАКА:<дата_начала>:<дата_конца>:add:<кличка>|<порода>|<хозяин> — ЗАПИСЬ НОВОЙ собаки (только если есть "новая", "новый", "незнакомая", "без клички"). После последнего ':' три поля через '|' в строгом порядке кличка|порода|хозяин — независимо от порядка в речи. Если поле не упомянуто — пустая строка.
-- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:delete — УДАЛЕНИЕ с передержки (ключевые слова: удали, убери, сними, отмени)
+- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:add:<уточнение> — ЗАПИСЬ собаки на передержку. Использовать для ЛЮБОГО запроса на запись, если в тексте НЕТ слова "новая" или "новый". <уточнение> — порода или имя хозяина если упомянуты, иначе пустая строка.
+- RECORD_BOOKING:НОВАЯ_СОБАКА:<дата_начала>:<дата_конца>:add:<кличка>|<порода>|<хозяин> — ТОЛЬКО если в запросе буквально есть слово "новая" или "новый" (например "новую собаку", "нового клиента"). Без этих слов — НИКОГДА не использовать. После последнего ':' три поля через '|' в порядке кличка|порода|хозяин. Если поле не упомянуто — пустая строка.
+- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:delete:<уточнение> — УДАЛЕНИЕ с передержки (ключевые слова: удали, убери, сними, отмени). <уточнение> — порода или хозяин если упомянуты, иначе пустая строка.
 - NAVIGATION:<имя> — маршрут к человеку из адресной книги (как доехать, как проехать, маршрут к, куда ехать к)
 - DATA:<запрос> — поиск в личных данных (номер, код, карта, документ, реквизиты, что не подходит под другие категории)
 
@@ -1070,7 +1297,11 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
 "запиши новую собаку Барон с 10 по 15 июня" → RECORD_BOOKING:НОВАЯ_СОБАКА:10.06.2026:15.06.2026:add:Барон||
 "запиши нового клиента Тузик хозяин Иван порода метис с 10 по 20 мая" → RECORD_BOOKING:НОВАЯ_СОБАКА:10.05.2026:20.05.2026:add:Тузик|метис|Иван
 "запиши нового клиента Барон, лабрадор, хозяин Петя с 10 по 15 июня" → RECORD_BOOKING:НОВАЯ_СОБАКА:10.06.2026:15.06.2026:add:Барон|Лабрадор|Петя
-"запиши Мэри с 10 по 15 июня" → RECORD_BOOKING:Мэри:10.06.2026:15.06.2026:add
+"запиши Мэри с 10 по 15 июня" → RECORD_BOOKING:Мэри:10.06.2026:15.06.2026:add:
+"запиши Джесси на передержку" → RECORD_BOOKING:Джесси:::add:
+"запишите Бобика на передержку" → RECORD_BOOKING:Бобик:::add:
+"запиши Тома хозяин Елена с 10 по 20 июня" → RECORD_BOOKING:Том:10.06.2026:20.06.2026:add:хозяин Елена
+"запиши Тома овчарка с 10 по 20 июня" → RECORD_BOOKING:Том:10.06.2026:20.06.2026:add:Овчарка
 "запишите Бобика на передержку с 1 по 5 марта" → RECORD_BOOKING:Бобик:01.03.2027:05.03.2027:add
 "удали Мэри с 10 по 15 июня" → RECORD_BOOKING:Мэри:10.06.2026:15.06.2026:delete
 "убери Бобика с передержки с 1 по 5 марта" → RECORD_BOOKING:Бобик:01.03.2027:05.03.2027:delete
@@ -1107,13 +1338,15 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
                 val parts = content.split(":")
                 val dogName = parts.getOrNull(1)?.trim()
                 val isNew = dogName.equals("НОВАЯ_СОБАКА", ignoreCase = true)
-                val sub = if (isNew) parts.getOrNull(5)?.split("|") else null
+                val extra = parts.getOrNull(5)?.trim()
+                val sub = if (isNew) extra?.split("|") else null
                 ClassifyResult(
-                    tableType = TableType.RECORD_BOOKING,
-                    dogName   = dogName,
-                    startDate = parts.getOrNull(2)?.trim(),
-                    endDate   = parts.getOrNull(3)?.trim(),
-                    action    = if (parts.getOrNull(4)?.trim().equals("delete", ignoreCase = true)) "delete" else "add",
+                    tableType     = TableType.RECORD_BOOKING,
+                    dogName       = dogName,
+                    startDate     = parts.getOrNull(2)?.trim(),
+                    endDate       = parts.getOrNull(3)?.trim(),
+                    action        = if (parts.getOrNull(4)?.trim().equals("delete", ignoreCase = true)) "delete" else "add",
+                    clarification = if (!isNew) extra?.takeIf { it.isNotBlank() } else null,
                     newDogPresetName  = sub?.getOrNull(0)?.trim()?.takeIf { it.isNotBlank() },
                     newDogPresetBreed = sub?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() },
                     newDogPresetOwner = sub?.getOrNull(2)?.trim()?.takeIf { it.isNotBlank() }
