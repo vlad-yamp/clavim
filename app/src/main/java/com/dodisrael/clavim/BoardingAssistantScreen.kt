@@ -157,7 +157,11 @@ private data class NewDogBookingPending(
 )
 
 @Composable
-fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> Unit = {}) {
+fun BoardingAssistantScreen(
+    onBack: () -> Unit,
+    onTelegramFosteringClick: () -> Unit = {},
+    initialFormAction: String? = null
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("clavim_prefs", Context.MODE_PRIVATE) }
@@ -176,8 +180,18 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
     var fullScreenPhotoIndex by remember { mutableStateOf<Int?>(null) }
     var galleryUrls by remember { mutableStateOf<List<String>>(emptyList()) }
     var pendingBooking by remember { mutableStateOf<PendingBooking?>(null) }
-    var pendingExistingDogBooking by remember { mutableStateOf<ExistingDogBookingPending?>(null) }
-    var pendingNewDogBooking by remember { mutableStateOf<NewDogBookingPending?>(null) }
+    val fromMenu = remember { initialFormAction != null }
+
+    var pendingExistingDogBooking by remember { mutableStateOf<ExistingDogBookingPending?>(
+        when (initialFormAction) {
+            "add"    -> ExistingDogBookingPending("", "", "")
+            "delete" -> ExistingDogBookingPending("", "", "", "", "delete")
+            else     -> null
+        }
+    ) }
+    var pendingNewDogBooking by remember { mutableStateOf<NewDogBookingPending?>(
+        if (initialFormAction == "new") NewDogBookingPending("", "") else null
+    ) }
     var shouldAutoLaunchMic by remember { mutableStateOf(false) }
     var bookingSuccess by remember { mutableStateOf(false) }
     var lastTableType by remember { mutableStateOf<TableType?>(null) }
@@ -594,7 +608,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
             },
             onDismiss = {
                 pendingExistingDogBooking = null
-                answer = "<p>Запись отменена.</p>"
+                if (fromMenu) onBack() else answer = "<p>Запись отменена.</p>"
             }
         )
     }
@@ -636,7 +650,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
             },
             onDismiss = {
                 pendingNewDogBooking = null
-                answer = "<p>Запись отменена.</p>"
+                if (fromMenu) onBack() else answer = "<p>Запись отменена.</p>"
             }
         )
     }
@@ -679,7 +693,7 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            if (!fromMenu) Spacer(Modifier.height(8.dp))
 
             // Mic button with pulse animation when loading
             val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -690,69 +704,71 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
                 label = "scale"
             )
 
-            Box(
-                modifier = Modifier
-                    .size(140.dp)
-                    .scale(pulseScale)
-                    .clip(CircleShape)
-                    .background(if (isLoading) accentColor.copy(alpha = 0.4f) else accentColor),
-                contentAlignment = Alignment.Center
-            ) {
-                Button(
-                    onClick = { if (!isLoading) launchSpeech() },
-                    modifier = Modifier.size(140.dp),
-                    shape = CircleShape,
-                    enabled = !isLoading,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent
-                    ),
-                    elevation = null
+            if (!fromMenu) {
+                Box(
+                    modifier = Modifier
+                        .size(140.dp)
+                        .scale(pulseScale)
+                        .clip(CircleShape)
+                        .background(if (isLoading) accentColor.copy(alpha = 0.4f) else accentColor),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.Mic,
-                        contentDescription = "Задать вопрос голосом",
-                        tint = Color.White,
-                        modifier = Modifier.size(56.dp)
+                    Button(
+                        onClick = { if (!isLoading) launchSpeech() },
+                        modifier = Modifier.size(140.dp),
+                        shape = CircleShape,
+                        enabled = !isLoading,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent
+                        ),
+                        elevation = null
+                    ) {
+                        Icon(
+                            Icons.Default.Mic,
+                            contentDescription = "Задать вопрос голосом",
+                            tint = Color.White,
+                            modifier = Modifier.size(56.dp)
+                        )
+                    }
+                }
+
+                if (!isLoading && answer.isBlank() && errorText.isBlank()) {
+                    Text(
+                        if (question.isBlank()) "Нажмите и задайте вопрос голосом"
+                        else "Нажмите ещё раз для нового вопроса",
+                        fontSize = 15.sp,
+                        color = Color(0xFF757575),
+                        textAlign = TextAlign.Center
                     )
                 }
-            }
 
-            if (!isLoading && answer.isBlank() && errorText.isBlank()) {
-                Text(
-                    if (question.isBlank()) "Нажмите и задайте вопрос голосом"
-                    else "Нажмите ещё раз для нового вопроса",
-                    fontSize = 15.sp,
-                    color = Color(0xFF757575),
-                    textAlign = TextAlign.Center
-                )
-            }
-
-            // Recognized question card
-            if (question.isNotBlank() && !isLoading) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFEDE7F6)),
-                    elevation = CardDefaults.cardElevation(0.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Проверьте и исправьте при необходимости", fontSize = 12.sp, color = Color(0xFF7E57C2), fontWeight = FontWeight.SemiBold)
-                        OutlinedTextField(
-                            value = question,
-                            onValueChange = { question = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            maxLines = 4,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(onDone = { askQuestion() })
-                        )
-                        if (answer.isBlank() && errorText.isBlank() && apiKey.isNotBlank()) {
-                            Button(
-                                onClick = { askQuestion() },
+                // Recognized question card
+                if (question.isNotBlank() && !isLoading) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFEDE7F6)),
+                        elevation = CardDefaults.cardElevation(0.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Проверьте и исправьте при необходимости", fontSize = 12.sp, color = Color(0xFF7E57C2), fontWeight = FontWeight.SemiBold)
+                            OutlinedTextField(
+                                value = question,
+                                onValueChange = { question = it },
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(containerColor = accentColor)
-                            ) {
-                                Text("Выполнить", color = Color.White)
+                                maxLines = 4,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { askQuestion() })
+                            )
+                            if (answer.isBlank() && errorText.isBlank() && apiKey.isNotBlank()) {
+                                Button(
+                                    onClick = { askQuestion() },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = accentColor)
+                                ) {
+                                    Text("Выполнить", color = Color.White)
+                                }
                             }
                         }
                     }

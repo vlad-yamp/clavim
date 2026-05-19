@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import android.net.Uri
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bed
@@ -17,6 +18,7 @@ import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RateReview
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -43,6 +45,10 @@ fun AdvertisingMenuScreen(onBack: () -> Unit, onWebViewClick: (url: String, titl
 }
 
 private fun buildAdvertisingMenuItems(onWebViewClick: (url: String, title: String) -> Unit): List<MenuItem> = listOf(
+    MenuItem("Поиск в\nинтернете", Icons.Default.Search, Color(0xFF0F9D58)) { _ ->
+        val query = Uri.encode("Дрессировка собак Хайфа")
+        onWebViewClick("https://www.google.com/search?q=$query", "Поиск в интернете")
+    },
     MenuItem("Google\nРеклама", Icons.Default.Campaign, Color(0xFF4285F4)) { ctx ->
         val launched = ctx.tryLaunchApp("com.google.android.apps.adwords")
         if (!launched) ctx.openUrl("https://ads.google.com")

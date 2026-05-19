@@ -1,6 +1,5 @@
 package com.dodisrael.clavim
 
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,7 +17,7 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -36,10 +35,16 @@ fun MainMenuScreen(
     onTelegramClick: () -> Unit,
     onWebViewClick: (url: String, title: String) -> Unit,
     onBoardingAssistantClick: () -> Unit,
+    onFosteringClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val items = remember { buildMainMenuItems(onSheetsClick, onInfoClick, onAdvertisingClick, onWhatsAppClick, onTelegramClick, onWebViewClick, onBoardingAssistantClick) }
+    val items = remember {
+        buildMainMenuItems(
+            onSheetsClick, onInfoClick, onAdvertisingClick, onWhatsAppClick,
+            onTelegramClick, onWebViewClick, onBoardingAssistantClick, onFosteringClick
+        )
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
@@ -67,19 +72,17 @@ private fun buildMainMenuItems(
     onWhatsAppClick: () -> Unit,
     onTelegramClick: () -> Unit,
     onWebViewClick: (url: String, title: String) -> Unit,
-    onBoardingAssistantClick: () -> Unit
+    onBoardingAssistantClick: () -> Unit,
+    onFosteringClick: () -> Unit
 ): List<MenuItem> = listOf( // onSettingsClick handled via AppHeader gear icon
+    MenuItem("Голосовой\nассистент", Icons.Default.Mic, Color(0xFF5E35B1)) { _ -> onBoardingAssistantClick() },
+    MenuItem("Передержка", Icons.Default.Pets, Color(0xFF6D4C41)) { _ -> onFosteringClick() },
     MenuItem("Наш сайт", Icons.Default.Language, Color(0xFF1565C0)) { _ ->
         onWebViewClick("https://dogisrael.com", "Наш сайт")
-    },
-    MenuItem("Поиск в интернете", Icons.Default.Search, Color(0xFF0F9D58)) { _ ->
-        val query = Uri.encode("Дрессировка собак Хайфа")
-        onWebViewClick("https://www.google.com/search?q=$query", "Поиск в интернете")
     },
     MenuItem("Реклама", Icons.Default.Campaign, Color(0xFF4285F4)) { _ -> onAdvertisingClick() },
     MenuItem("WhatsApp", Icons.Default.Chat, Color(0xFF25D366)) { _ -> onWhatsAppClick() },
     MenuItem("Телеграм", Icons.AutoMirrored.Filled.Send, Color(0xFF039BE5)) { _ -> onTelegramClick() },
     MenuItem("Таблицы\nGoogle", Icons.Default.TableChart, Color(0xFF1A8754)) { _ -> onSheetsClick() },
-    MenuItem("Голосовой\nассистент", Icons.Default.Mic, Color(0xFF5E35B1)) { _ -> onBoardingAssistantClick() },
     MenuItem("Информация", Icons.Default.Info, Color(0xFF0277BD)) { _ -> onInfoClick() }
 )

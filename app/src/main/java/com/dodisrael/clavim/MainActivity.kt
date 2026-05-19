@@ -39,6 +39,8 @@ fun AppContent() {
     var reminderType by remember { mutableStateOf(1) }
     var webViewUrl by remember { mutableStateOf("") }
     var webViewReturnScreen by remember { mutableStateOf(Screen.MAIN) }
+    var boardingInitialAction by remember { mutableStateOf<String?>(null) }
+    var boardingReturnScreen by remember { mutableStateOf(Screen.MAIN) }
 
     fun openWebView(url: String, title: String, returnTo: Screen) {
         webViewUrl = url
@@ -54,6 +56,8 @@ fun AppContent() {
             Screen.WHATSAPP_TRANSLATION, Screen.WHATSAPP_PICKUP -> Screen.WHATSAPP
             Screen.WEB_VIEW -> webViewReturnScreen
             Screen.SETTINGS -> Screen.MAIN
+            Screen.FOSTERING_MENU -> Screen.MAIN
+            Screen.BOARDING_ASSISTANT -> { boardingInitialAction = null; boardingReturnScreen }
             else -> Screen.MAIN
         }
     }
@@ -119,12 +123,29 @@ fun AppContent() {
             onWhatsAppClick            = { screen = Screen.WHATSAPP },
             onTelegramClick            = { screen = Screen.TELEGRAM },
             onWebViewClick             = { url, title -> openWebView(url, title, Screen.MAIN) },
-            onBoardingAssistantClick   = { screen = Screen.BOARDING_ASSISTANT },
+            onBoardingAssistantClick   = { boardingReturnScreen = Screen.MAIN; screen = Screen.BOARDING_ASSISTANT },
+            onFosteringClick           = { screen = Screen.FOSTERING_MENU },
             onSettingsClick            = { screen = Screen.SETTINGS }
         )
-        Screen.BOARDING_ASSISTANT  -> BoardingAssistantScreen(
+        Screen.FOSTERING_MENU      -> FosteringMenuScreen(
             onBack = { screen = Screen.MAIN },
-            onTelegramFosteringClick = { screen = Screen.TELEGRAM_FOSTERING }
+            onNewDogClick = {
+                boardingInitialAction = "new"; boardingReturnScreen = Screen.FOSTERING_MENU
+                screen = Screen.BOARDING_ASSISTANT
+            },
+            onExistingDogClick = {
+                boardingInitialAction = "add"; boardingReturnScreen = Screen.FOSTERING_MENU
+                screen = Screen.BOARDING_ASSISTANT
+            },
+            onDeleteDogClick = {
+                boardingInitialAction = "delete"; boardingReturnScreen = Screen.FOSTERING_MENU
+                screen = Screen.BOARDING_ASSISTANT
+            }
+        )
+        Screen.BOARDING_ASSISTANT  -> BoardingAssistantScreen(
+            onBack = { boardingInitialAction = null; screen = boardingReturnScreen },
+            onTelegramFosteringClick = { screen = Screen.TELEGRAM_FOSTERING },
+            initialFormAction = boardingInitialAction
         )
     }
 }
