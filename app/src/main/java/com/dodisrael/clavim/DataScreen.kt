@@ -12,7 +12,11 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Column
@@ -33,6 +37,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
@@ -40,6 +45,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -53,6 +59,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,6 +73,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -265,11 +274,14 @@ fun DataEntriesScreen(onBack: () -> Unit) {
     val scriptUrl = remember { prefs.getString("addresses_script_url", "") ?: "" }
 
     var entries by remember { mutableStateOf(loadDataEntries(prefs)) }
+    var viewingIndex by remember { mutableStateOf<Int?>(null) }
     var editingIndex by remember { mutableStateOf<Int?>(null) }
     var deletingIndex by remember { mutableStateOf<Int?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var syncError by remember { mutableStateOf("") }
+    var searchActive by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
     val lazyListState = rememberLazyListState()
     val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
@@ -310,6 +322,14 @@ fun DataEntriesScreen(onBack: () -> Unit) {
 
     LaunchedEffect(Unit) { loadFromServer() }
 
+    viewingIndex?.let { idx ->
+        DataEntryViewDialog(
+            entry = entries[idx],
+            onDismiss = { viewingIndex = null },
+            onEdit = { editingIndex = idx }
+        )
+    }
+
     if (editingIndex != null || showAddDialog) {
         val initial = editingIndex?.let { entries[it] } ?: DataEntry("", "")
         DataEntryEditDialog(
@@ -347,13 +367,45 @@ fun DataEntriesScreen(onBack: () -> Unit) {
         )
     }
 
+    val filteredEntries = remember(entries, searchQuery) {
+        if (searchQuery.isBlank()) entries
+        else entries.filter { e ->
+            e.key.contains(searchQuery, ignoreCase = true) ||
+            e.value.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
             title = "Наши данные",
-            subtitle = "Удерживайте ≡ для перемещения",
+            subtitle = if (searchActive) "Поиск по названию и значению" else "Удерживайте ≡ для перемещения",
             showBack = true,
             onBack = onBack
         )
+
+        if (searchActive) {
+            TextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Поиск…") },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF1565C0)) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Очистить", tint = Color(0xFF757575))
+                        }
+                    }
+                },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedIndicatorColor = Color(0xFF1565C0),
+                    unfocusedIndicatorColor = Color(0xFFE0E0E0)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         if (syncError.isNotBlank()) {
             Text(
@@ -367,7 +419,7 @@ fun DataEntriesScreen(onBack: () -> Unit) {
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
-            if (isLoading && entries.isEmpty()) {
+            if (isLoading && filteredEntries.isEmpty()) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
                     color = Color(0xFF1565C0)
@@ -381,12 +433,13 @@ fun DataEntriesScreen(onBack: () -> Unit) {
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    itemsIndexed(entries, key = { idx, item -> "$idx:${item.key}" }) { idx, entry ->
-                        ReorderableItem(reorderState, key = "$idx:${entry.key}") { isDragging ->
+                    itemsIndexed(filteredEntries, key = { _, item -> item.key + item.value }) { idx, entry ->
+                        ReorderableItem(reorderState, key = entry.key + entry.value) { isDragging ->
                             DataEntryCard(
                                 entry = entry,
                                 isDragging = isDragging,
                                 dragHandleModifier = Modifier.longPressDraggableHandle(),
+                                onView = { viewingIndex = idx },
                                 onEdit = { editingIndex = idx },
                                 onDelete = { deletingIndex = idx },
                                 onCopy = {
@@ -416,6 +469,19 @@ fun DataEntriesScreen(onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                FloatingActionButton(
+                    onClick = {
+                        searchActive = !searchActive
+                        if (!searchActive) searchQuery = ""
+                    },
+                    containerColor = if (searchActive) Color(0xFF1565C0) else Color(0xFF78909C)
+                ) {
+                    Icon(
+                        if (searchActive) Icons.Default.Close else Icons.Default.Search,
+                        contentDescription = "Поиск",
+                        tint = Color.White
+                    )
+                }
                 if (scriptUrl.isNotBlank()) {
                     FloatingActionButton(
                         onClick = { loadFromServer() },
@@ -443,13 +509,16 @@ private fun DataEntryCard(
     entry: DataEntry,
     isDragging: Boolean,
     dragHandleModifier: Modifier,
+    onView: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onCopy: () -> Unit,
     onShare: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onView),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(if (isDragging) 8.dp else 2.dp)
@@ -471,15 +540,17 @@ private fun DataEntryCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     entry.key,
-                    fontWeight = FontWeight.Normal,
+                    fontWeight = FontWeight.Medium,
                     fontSize = 12.sp,
-                    color = Color(0xFF9E9E9E)
+                    color = Color(0xFF1565C0)
                 )
                 Text(
                     entry.value,
                     fontSize = 16.sp,
                     color = Color(0xFF1C1B1F),
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             IconButton(onClick = onCopy, modifier = Modifier.size(30.dp)) {
@@ -493,6 +564,45 @@ private fun DataEntryCard(
             }
             IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
                 Icon(Icons.Default.Delete, contentDescription = "Удалить", tint = Color(0xFFB00020), modifier = Modifier.size(17.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DataEntryViewDialog(entry: DataEntry, onDismiss: () -> Unit, onEdit: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(8.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(entry.key, fontSize = 13.sp, color = Color(0xFF9E9E9E), fontWeight = FontWeight.Normal)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        entry.value,
+                        fontSize = 16.sp,
+                        color = Color(0xFF1C1B1F),
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Закрыть") }
+                    Button(
+                        onClick = { onDismiss(); onEdit() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                    ) { Text("Редактировать", color = Color.White) }
+                }
             }
         }
     }

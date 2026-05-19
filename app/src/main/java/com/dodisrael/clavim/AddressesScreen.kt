@@ -28,12 +28,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,6 +48,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -150,6 +154,8 @@ fun AddressesScreen(onBack: () -> Unit) {
     var showAddDialog by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var syncError by remember { mutableStateOf("") }
+    var searchActive by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
     val lazyListState = rememberLazyListState()
     val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
@@ -229,13 +235,46 @@ fun AddressesScreen(onBack: () -> Unit) {
         )
     }
 
+    val filteredAddresses = remember(addresses, searchQuery) {
+        if (searchQuery.isBlank()) addresses
+        else addresses.filter { a ->
+            a.name.contains(searchQuery, ignoreCase = true) ||
+            a.hebrew.contains(searchQuery, ignoreCase = true) ||
+            a.russian.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
             title = "Адреса",
-            subtitle = "Удерживайте ≡ для перемещения",
+            subtitle = if (searchActive) "Поиск по имени и адресу" else "Удерживайте ≡ для перемещения",
             showBack = true,
             onBack = onBack
         )
+
+        if (searchActive) {
+            TextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Поиск…") },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFFAD1457)) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Очистить", tint = Color(0xFF757575))
+                        }
+                    }
+                },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedIndicatorColor = Color(0xFFAD1457),
+                    unfocusedIndicatorColor = Color(0xFFE0E0E0)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         if (syncError.isNotBlank()) {
             Text(
@@ -249,7 +288,7 @@ fun AddressesScreen(onBack: () -> Unit) {
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
-            if (isLoading && addresses.isEmpty()) {
+            if (isLoading && filteredAddresses.isEmpty()) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
                     color = Color(0xFFAD1457)
@@ -263,7 +302,7 @@ fun AddressesScreen(onBack: () -> Unit) {
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    itemsIndexed(addresses, key = { _, item -> item.name + item.hebrew }) { idx, addr ->
+                    itemsIndexed(filteredAddresses, key = { _, item -> item.name + item.hebrew }) { idx, addr ->
                         ReorderableItem(reorderState, key = addr.name + addr.hebrew) { isDragging ->
                             AddressCard(
                                 entry = addr,
@@ -304,6 +343,19 @@ fun AddressesScreen(onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                FloatingActionButton(
+                    onClick = {
+                        searchActive = !searchActive
+                        if (!searchActive) searchQuery = ""
+                    },
+                    containerColor = if (searchActive) Color(0xFFAD1457) else Color(0xFF78909C)
+                ) {
+                    Icon(
+                        if (searchActive) Icons.Default.Close else Icons.Default.Search,
+                        contentDescription = "Поиск",
+                        tint = Color.White
+                    )
+                }
                 if (scriptUrl.isNotBlank()) {
                     FloatingActionButton(
                         onClick = { loadFromServer() },
