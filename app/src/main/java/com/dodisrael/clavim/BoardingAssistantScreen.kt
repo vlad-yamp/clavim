@@ -37,10 +37,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.foundation.text.KeyboardActions
@@ -408,12 +412,12 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
                         val dogName  = result.dogName
                         val startDate = result.startDate
                         val endDate   = result.endDate
-                        if (dogName == null || startDate == null || endDate == null) {
-                            "<p>Не удалось распознать кличку или даты. Попробуйте ещё раз.</p>" to ""
+                        if (dogName == null) {
+                            "<p>Не удалось распознать кличку. Попробуйте ещё раз.</p>" to ""
                         } else if (dogName.equals("НОВАЯ_СОБАКА", ignoreCase = true)) {
                             pendingNewDogBooking = NewDogBookingPending(
-                                startDate   = startDate,
-                                endDate     = endDate,
+                                startDate   = startDate ?: "",
+                                endDate     = endDate ?: "",
                                 presetName  = result.newDogPresetName ?: "",
                                 presetBreed = result.newDogPresetBreed ?: "",
                                 presetOwner = result.newDogPresetOwner ?: ""
@@ -422,8 +426,8 @@ fun BoardingAssistantScreen(onBack: () -> Unit, onTelegramFosteringClick: () -> 
                         } else {
                             pendingExistingDogBooking = ExistingDogBookingPending(
                                 dogName       = dogName,
-                                startDate     = startDate,
-                                endDate       = endDate,
+                                startDate     = startDate ?: "",
+                                endDate       = endDate ?: "",
                                 clarification = result.clarification ?: "",
                                 action        = result.action
                             )
@@ -986,12 +990,40 @@ private fun ExistingDogFormDialog(
     onConfirm: (dogName: String, clarification: String, startDate: String, endDate: String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var dogName       by remember { mutableStateOf(pending.dogName) }
-    var clarification by remember { mutableStateOf(pending.clarification) }
-    var startDateStr  by remember { mutableStateOf(pending.startDate) }
-    var endDateStr    by remember { mutableStateOf(pending.endDate) }
-    var showDatePicker by remember { mutableStateOf(false) }
+    var dogName         by remember { mutableStateOf(pending.dogName) }
+    var clarification   by remember { mutableStateOf(pending.clarification) }
+    var startDateStr    by remember { mutableStateOf(pending.startDate) }
+    var endDateStr      by remember { mutableStateOf(pending.endDate) }
+    var showDatePicker  by remember { mutableStateOf(false) }
+    var showDogPicker   by remember { mutableStateOf(false) }
+    var showOwnerPicker by remember { mutableStateOf(false) }
+    var clientDogs      by remember { mutableStateOf<List<ClientDog>>(emptyList()) }
+    var isLoadingDogs   by remember { mutableStateOf(true) }
     val isDelete = pending.action == "delete"
+
+    LaunchedEffect(Unit) {
+        try { clientDogs = parseClientDogs(fetchCsv(CLIENTS_CSV_URL)) } catch (_: Exception) {}
+        isLoadingDogs = false
+        if (dogName.isNotBlank()) {
+            val entry = clientDogs.firstOrNull { cd ->
+                cd.dogName.equals(dogName, ignoreCase = true) &&
+                (clarification.isBlank() || cd.ownerName.equals(clarification, ignoreCase = true))
+            } ?: clientDogs.firstOrNull { it.dogName.equals(dogName, ignoreCase = true) }
+            if (entry != null) {
+                if (clarification.isBlank() && entry.ownerName.isNotBlank())
+                    clarification = entry.ownerName
+                if (isDelete && startDateStr.isBlank() && endDateStr.isBlank())
+                    parseLastBoardingDates(entry.lastBoarding)?.let { (s, e) ->
+                        startDateStr = s; endDateStr = e
+                    }
+            }
+        }
+    }
+
+    val ownersForDog = remember(dogName, clientDogs) {
+        clientDogs.filter { it.dogName.equals(dogName, ignoreCase = true) }
+                  .map { it.ownerName }.filter { it.isNotBlank() }.distinct()
+    }
 
     if (showDatePicker) {
         DateRangePickerModal(
@@ -999,6 +1031,43 @@ private fun ExistingDogFormDialog(
             initialEndDate = endDateStr,
             onConfirm = { s, e -> startDateStr = s; endDateStr = e; showDatePicker = false },
             onDismiss = { showDatePicker = false }
+        )
+    }
+    if (showDogPicker) {
+        DogSelectionDialog(
+            dogs = clientDogs.map { it.dogName }.distinct().sortedBy { it },
+            onSelect = { name ->
+                dogName = name
+                val owners = clientDogs.filter { it.dogName.equals(name, ignoreCase = true) }
+                                       .map { it.ownerName }.filter { it.isNotBlank() }.distinct()
+                if (owners.isNotEmpty()) clarification = owners[0]
+                if (isDelete) {
+                    val entry = clientDogs.firstOrNull { it.dogName.equals(name, ignoreCase = true) }
+                    parseLastBoardingDates(entry?.lastBoarding ?: "")?.let { (s, e) ->
+                        startDateStr = s; endDateStr = e
+                    }
+                }
+                showDogPicker = false
+            },
+            onDismiss = { showDogPicker = false }
+        )
+    }
+    if (showOwnerPicker) {
+        OwnerSelectionDialog(
+            owners = ownersForDog,
+            onSelect = { owner ->
+                clarification = owner
+                if (isDelete) {
+                    val entry = clientDogs.firstOrNull {
+                        it.dogName.equals(dogName, ignoreCase = true) && it.ownerName == owner
+                    }
+                    parseLastBoardingDates(entry?.lastBoarding ?: "")?.let { (s, e) ->
+                        startDateStr = s; endDateStr = e
+                    }
+                }
+                showOwnerPicker = false
+            },
+            onDismiss = { showOwnerPicker = false }
         )
     }
 
@@ -1023,23 +1092,59 @@ private fun ExistingDogFormDialog(
                                 else "$startDateStr  —  $endDateStr"
                     Text(label, fontSize = 14.sp)
                 }
-
-                OutlinedTextField(
-                    value = dogName,
-                    onValueChange = { dogName = it },
-                    label = { Text("Кличка") },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    OutlinedTextField(
+                        value = dogName,
+                        onValueChange = { dogName = it },
+                        label = { Text("Кличка") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    IconButton(
+                        onClick = { if (!isLoadingDogs) showDogPicker = true },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFEDE7F6))
+                    ) {
+                        if (isLoadingDogs)
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        else
+                            Icon(Icons.Default.ExpandMore, contentDescription = "Выбрать из списка",
+                                 tint = Color(0xFF5E35B1), modifier = Modifier.size(24.dp))
+                    }
+                }
 
-                OutlinedTextField(
-                    value = clarification,
-                    onValueChange = { clarification = it },
-                    label = { Text("Уточнение") },
-                    placeholder = { Text("порода, хозяин...", fontSize = 13.sp) },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    OutlinedTextField(
+                        value = clarification,
+                        onValueChange = { clarification = it },
+                        label = { Text("Уточнение") },
+                        placeholder = { Text("порода, хозяин...", fontSize = 13.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    if (ownersForDog.size > 1) {
+                        IconButton(
+                            onClick = { showOwnerPicker = true },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFEDE7F6))
+                        ) {
+                            Icon(Icons.Default.Person, contentDescription = "Выбрать хозяина",
+                                 tint = Color(0xFF5E35B1), modifier = Modifier.size(24.dp))
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -1199,6 +1304,135 @@ private fun normalizeIsraeliPhone(raw: String): String {
     }
 }
 
+private data class ClientDog(
+    val dogName: String,
+    val ownerName: String,
+    val lastBoarding: String = ""
+)
+
+private fun parseClientDogs(csv: String): List<ClientDog> =
+    csv.lines().drop(1).filter { it.isNotBlank() }.mapNotNull { line ->
+        val cols = parseCsvLine(line)
+        val dogName = cols.getOrNull(3)?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        ClientDog(
+            dogName      = dogName,
+            ownerName    = cols.getOrNull(0)?.trim() ?: "",
+            lastBoarding = cols.getOrNull(7)?.trim() ?: ""
+        )
+    }
+
+private fun parseLastBoardingDates(s: String): Pair<String, String>? {
+    if (s.isBlank()) return null
+    val cleaned = s.substringBefore("(").trim()
+    val parts = Regex("[–—\\-]").split(cleaned).map { it.trim() }.filter { it.isNotBlank() }
+    if (parts.size < 2) return null
+
+    fun parseMonthDay(part: String): Pair<Int, Int>? {
+        val dm = part.split(".").map { it.trim() }
+        if (dm.size < 2) return null
+        return (dm[0].toIntOrNull() ?: return null) to (dm[1].toIntOrNull() ?: return null)
+    }
+
+    val (startDay, startMonth) = parseMonthDay(parts[0]) ?: return null
+    val (endDay, endMonth)     = parseMonthDay(parts[1]) ?: return null
+
+    val cal = Calendar.getInstance()
+    val curMonth = cal.get(Calendar.MONTH) + 1
+    val curYear  = cal.get(Calendar.YEAR)
+    val startYear = if (startMonth < curMonth) curYear + 1 else curYear
+    val endYear   = if (endMonth < startMonth) startYear + 1 else startYear
+
+    return "%02d.%02d.%04d".format(startDay, startMonth, startYear) to
+           "%02d.%02d.%04d".format(endDay, endMonth, endYear)
+}
+
+private fun isValidDateFormat(s: String?): Boolean {
+    if (s.isNullOrBlank()) return false
+    val p = s.split(".")
+    return p.size == 3 && p[0].toIntOrNull() != null && p[1].toIntOrNull() != null &&
+           p[2].length == 4 && p[2].toIntOrNull() != null
+}
+
+@Composable
+private fun DogSelectionDialog(
+    dogs: List<String>,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var search by remember { mutableStateOf("") }
+    val filtered = remember(dogs, search) {
+        if (search.isBlank()) dogs else dogs.filter { it.contains(search, ignoreCase = true) }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Выбрать собаку", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    placeholder = { Text("Поиск...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Spacer(Modifier.height(8.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 350.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    filtered.forEach { dog ->
+                        Text(
+                            dog,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(dog) }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            fontSize = 15.sp
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
+}
+
+@Composable
+private fun OwnerSelectionDialog(
+    owners: List<String>,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Выбрать хозяина", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 300.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                owners.forEach { owner ->
+                    Text(
+                        owner,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(owner) }
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                        fontSize = 15.sp
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DateRangePickerModal(
@@ -1283,7 +1517,7 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
 - PHOTOS:<кличка> — запрос на показ фото собаки (покажи, хочу посмотреть)
 - RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:add:<уточнение> — ЗАПИСЬ собаки на передержку. Использовать для ЛЮБОГО запроса на запись, если в тексте НЕТ слова "новая" или "новый". <уточнение> — порода или имя хозяина если упомянуты, иначе пустая строка.
 - RECORD_BOOKING:НОВАЯ_СОБАКА:<дата_начала>:<дата_конца>:add:<кличка>|<порода>|<хозяин> — ТОЛЬКО если в запросе буквально есть слово "новая" или "новый" (например "новую собаку", "нового клиента"). Без этих слов — НИКОГДА не использовать. После последнего ':' три поля через '|' в порядке кличка|порода|хозяин. Если поле не упомянуто — пустая строка.
-- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:delete:<уточнение> — УДАЛЕНИЕ с передержки (ключевые слова: удали, убери, сними, отмени). <уточнение> — порода или хозяин если упомянуты, иначе пустая строка.
+- RECORD_BOOKING:<кличка>:<дата_начала>:<дата_конца>:delete:<уточнение> — УДАЛЕНИЕ с передержки (ключевые слова: удали, убери, сними, отмени). <уточнение> — порода или хозяин если упомянуты, иначе пустая строка. Если кличка не упомянута — оставить пустой, но action ВСЕГДА "delete" если запрос про удаление.
 - NAVIGATION:<имя> — маршрут к человеку из адресной книги (как доехать, как проехать, маршрут к, куда ехать к)
 - DATA:<запрос> — поиск в личных данных (номер, код, карта, документ, реквизиты, что не подходит под другие категории)
 
@@ -1305,6 +1539,8 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
 "запишите Бобика на передержку с 1 по 5 марта" → RECORD_BOOKING:Бобик:01.03.2027:05.03.2027:add
 "удали Мэри с 10 по 15 июня" → RECORD_BOOKING:Мэри:10.06.2026:15.06.2026:delete
 "убери Бобика с передержки с 1 по 5 марта" → RECORD_BOOKING:Бобик:01.03.2027:05.03.2027:delete
+"удали собаку с передержки" → RECORD_BOOKING::::delete:
+"удалить с передержки" → RECORD_BOOKING::::delete:
 "кто на передержке сейчас" → BOARDING
 
 Ответь ТОЛЬКО в одном из указанных форматов, без пояснений."""
@@ -1343,8 +1579,8 @@ private suspend fun classifyQuestion(question: String, apiKey: String): Classify
                 ClassifyResult(
                     tableType     = TableType.RECORD_BOOKING,
                     dogName       = dogName,
-                    startDate     = parts.getOrNull(2)?.trim(),
-                    endDate       = parts.getOrNull(3)?.trim(),
+                    startDate     = parts.getOrNull(2)?.trim()?.takeIf { isValidDateFormat(it) },
+                    endDate       = parts.getOrNull(3)?.trim()?.takeIf { isValidDateFormat(it) },
                     action        = if (parts.getOrNull(4)?.trim().equals("delete", ignoreCase = true)) "delete" else "add",
                     clarification = if (!isNew) extra?.takeIf { it.isNotBlank() } else null,
                     newDogPresetName  = sub?.getOrNull(0)?.trim()?.takeIf { it.isNotBlank() },
