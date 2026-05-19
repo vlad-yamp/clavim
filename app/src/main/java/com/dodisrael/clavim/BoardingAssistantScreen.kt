@@ -39,6 +39,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.foundation.text.KeyboardActions
@@ -81,6 +82,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.net.Uri
+import android.provider.ContactsContract
 import java.io.ByteArrayInputStream
 import java.util.zip.ZipInputStream
 import org.json.JSONArray
@@ -900,6 +902,25 @@ private fun NewDogFormDialog(
     var breed   by remember { mutableStateOf("") }
     var owner   by remember { mutableStateOf("") }
     var phone   by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
+    val contactPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.data?.let { uri ->
+                context.contentResolver.query(
+                    uri,
+                    arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                    null, null, null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        phone = normalizeIsraeliPhone(cursor.getString(0) ?: "")
+                    }
+                }
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -932,14 +953,40 @@ private fun NewDogFormDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
-                OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    label = { Text("Телефон") },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    OutlinedTextField(
+                        value = phone,
+                        onValueChange = { phone = it },
+                        label = { Text("Телефон") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+                    )
+                    IconButton(
+                        onClick = {
+                            val intent = Intent(
+                                Intent.ACTION_PICK,
+                                ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+                            )
+                            contactPickerLauncher.launch(intent)
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFEDE7F6))
+                    ) {
+                        Icon(
+                            Icons.Default.Person,
+                            contentDescription = "Выбрать из контактов",
+                            tint = Color(0xFF5E35B1),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
@@ -953,6 +1000,14 @@ private fun NewDogFormDialog(
             }
         }
     )
+}
+
+private fun normalizeIsraeliPhone(raw: String): String {
+    val digits = raw.filter { it.isDigit() }
+    return when {
+        digits.startsWith("972") && digits.length > 3 -> "0" + digits.drop(3)
+        else -> digits
+    }
 }
 
 private suspend fun fetchCsv(url: String): String = withContext(Dispatchers.IO) {
