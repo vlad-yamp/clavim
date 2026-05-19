@@ -45,10 +45,6 @@ fun AdvertisingMenuScreen(onBack: () -> Unit, onWebViewClick: (url: String, titl
 }
 
 private fun buildAdvertisingMenuItems(onWebViewClick: (url: String, title: String) -> Unit): List<MenuItem> = listOf(
-    MenuItem("Поиск в\nинтернете", Icons.Default.Search, Color(0xFF0F9D58)) { _ ->
-        val query = Uri.encode("Дрессировка собак Хайфа")
-        onWebViewClick("https://www.google.com/search?q=$query", "Поиск в интернете")
-    },
     MenuItem("Google\nРеклама", Icons.Default.Campaign, Color(0xFF4285F4)) { ctx ->
         val launched = ctx.tryLaunchApp("com.google.android.apps.adwords")
         if (!launched) ctx.openUrl("https://ads.google.com")
@@ -71,5 +67,9 @@ private fun buildAdvertisingMenuItems(onWebViewClick: (url: String, title: Strin
     },
     MenuItem("Фото\nпередержки", Icons.Default.PhotoLibrary, Color(0xFF558B2F)) { ctx ->
         ctx.openUrl("https://docs.google.com/document/d/e/2PACX-1vSugkyexuBk6HAV1pyH2SiOpkdiIH9M7y3e1e75zFiNR3MIB1V9adrwgAyNgmLGHjf-SrJIyR8Ac7vk/pub?widget=true&headers=false#gid=0?&single=true")
+    },
+    MenuItem("Поиск в\nинтернете", Icons.Default.Search, Color(0xFF0F9D58)) { _ ->
+        val query = Uri.encode("Дрессировка собак Хайфа")
+        onWebViewClick("https://www.google.com/search?q=$query", "Поиск в интернете")
     }
 )

@@ -574,72 +574,35 @@ fun BoardingAssistantScreen(
                     Toast.makeText(context, "Запущено. Придёт сообщение в Telegram.", Toast.LENGTH_LONG).show()
                     onBack()
                 } else {
-                    scope.launch {
-                        isLoading = true
-                        loadingStatus = "Ищу в базе клиентов..."
+                    GlobalScope.launch(Dispatchers.IO) {
                         try {
                             val csv = fetchCsv(CLIENTS_CSV_URL)
                             val candidates = findDogCandidates(csv, dogNameField)
-                            val (html, voice) = when {
+                            val (success, info) = when {
                                 candidates.isEmpty() ->
-                                    "<p>Собака <b>«$dogNameField»</b> не найдена в базе клиентов.</p>" to
-                                    "Собака $dogNameField не найдена в базе"
-                                candidates.size == 1 -> {
-                                    loadingStatus = if (isDelete) "Удаляю из таблицы..." else "Записываю в таблицу..."
-                                    val success = appendBookingToSheet(startD, endD, candidates[0], webUrl, pending.action)
-                                    if (success) {
-                                        bookingSuccess = true
-                                        lastTableType = TableType.RECORD_BOOKING
-                                        val label = if (isDelete) "Удалено" else "Записано"
-                                        "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ $label!</p>" +
-                                        "<p>${candidates[0]}</p>" +
-                                        "<p>📅 с <b>$startD</b> по <b>$endD</b></p>" to "$label!"
-                                    } else {
-                                        "<p style='color:#D32F2F'>❌ Ошибка. Проверьте URL Apps Script в настройках.</p>" to ""
-                                    }
-                                }
+                                    false to "Собака «$dogNameField» не найдена в базе"
+                                candidates.size == 1 ->
+                                    appendBookingToSheet(startD, endD, candidates[0], webUrl, pending.action) to candidates[0]
                                 else -> {
-                                    val selected = if (clarificationField.isNotBlank()) {
-                                        loadingStatus = "Уточняю выбор..."
+                                    val selected = if (clarificationField.isNotBlank())
                                         disambiguateDog(clarificationField, candidates, capturedApiKey)
-                                    } else null
-                                    if (selected != null) {
-                                        loadingStatus = if (isDelete) "Удаляю из таблицы..." else "Записываю в таблицу..."
-                                        val success = appendBookingToSheet(startD, endD, selected, webUrl, pending.action)
-                                        if (success) {
-                                            bookingSuccess = true
-                                            lastTableType = TableType.RECORD_BOOKING
-                                            val label = if (isDelete) "Удалено" else "Записано"
-                                            "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ $label!</p>" +
-                                            "<p>$selected</p>" +
-                                            "<p>📅 с <b>$startD</b> по <b>$endD</b></p>" to "$label!"
-                                        } else {
-                                            "<p style='color:#D32F2F'>❌ Ошибка. Проверьте URL Apps Script в настройках.</p>" to ""
-                                        }
-                                    } else {
-                                        val listHtml = candidates.joinToString("") { "<li>$it</li>" }
-                                        pendingBooking = PendingBooking(dogNameField, startD, endD, candidates, pending.action)
-                                        shouldAutoLaunchMic = true
-                                        "<p>Найдено <b>${candidates.size}</b> собаки с кличкой <b>«$dogNameField»</b>:</p>" +
-                                        "<ul>$listHtml</ul>" +
-                                        "<p>🎤 Уточните породу или хозяина...</p>" to
-                                        "Найдено ${candidates.size} собаки. Уточните породу или хозяина."
-                                    }
+                                    else null
+                                    if (selected != null)
+                                        appendBookingToSheet(startD, endD, selected, webUrl, pending.action) to selected
+                                    else
+                                        false to "Несколько собак с кличкой «$dogNameField»: ${candidates.joinToString(", ")}"
                                 }
                             }
-                            if (voice.isNotBlank() && capturedApiKey.isNotBlank() && voiceAutoSpeak) {
-                                loadingStatus = "Подготовка голоса..."
-                                pendingTtsBytes.value = withContext(Dispatchers.IO) { downloadTtsAudio(formatPhoneNumbers(voice.trim()), capturedApiKey) }
-                            }
-                            answer = html
-                            voiceComment = voice
-                            if (voice.isNotBlank() && voiceAutoSpeak) speak(voice)
+                            val label = if (isDelete) "Удалён из передержки" else "Записан на передержку"
+                            sendTelegramMessage(
+                                if (success) "✅ $label!\n$info\n📅 $startD — $endD"
+                                else "❌ Ошибка. $info"
+                            )
                         } catch (e: Exception) {
-                            errorText = "Ошибка: ${e.message}"
+                            sendTelegramMessage("❌ Ошибка: ${e.message ?: "неизвестная"}")
                         }
-                        isLoading = false
-                        loadingStatus = ""
                     }
+                    Toast.makeText(context, "Запущено. Придёт сообщение в Telegram.", Toast.LENGTH_LONG).show()
                 }
             },
             onDismiss = {
@@ -678,28 +641,18 @@ fun BoardingAssistantScreen(
                     Toast.makeText(context, "Запущено. Придёт сообщение в Telegram.", Toast.LENGTH_LONG).show()
                     onBack()
                 } else {
-                    scope.launch {
-                        isLoading = true
-                        loadingStatus = "Записываю в таблицу..."
-                        val success = appendBookingToSheet(startD, endD, info, webUrl, "add")
-                        if (success) {
-                            bookingSuccess = true
-                            lastTableType = TableType.RECORD_BOOKING
-                            answer = "<p style='color:#388E3C;font-weight:bold;font-size:16px'>✅ Записано!</p>" +
-                                "<p>$info</p>" +
-                                "<p>📅 с <b>$startD</b> по <b>$endD</b></p>"
-                            voiceComment = "Записано!"
-                            if (capturedApiKey.isNotBlank() && voiceAutoSpeak) {
-                                pendingTtsBytes.value = withContext(Dispatchers.IO) { downloadTtsAudio("Записано!", capturedApiKey) }
-                            }
-                            if (voiceAutoSpeak) speak("Записано!")
-                        } else {
-                            answer = "<p style='color:#D32F2F'>❌ Ошибка. Проверьте URL Apps Script в настройках.</p>"
-                            voiceComment = ""
+                    GlobalScope.launch(Dispatchers.IO) {
+                        try {
+                            val success = appendBookingToSheet(startD, endD, info, webUrl, "add")
+                            sendTelegramMessage(
+                                if (success) "✅ Записан на передержку!\n$info\n📅 $startD — $endD"
+                                else "❌ Ошибка при записи на передержку\n$info"
+                            )
+                        } catch (e: Exception) {
+                            sendTelegramMessage("❌ Ошибка: ${e.message ?: "неизвестная"}")
                         }
-                        isLoading = false
-                        loadingStatus = ""
                     }
+                    Toast.makeText(context, "Запущено. Придёт сообщение в Telegram.", Toast.LENGTH_LONG).show()
                 }
             },
             onDismiss = {
