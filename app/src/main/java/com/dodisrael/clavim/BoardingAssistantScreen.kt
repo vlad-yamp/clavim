@@ -210,7 +210,7 @@ fun BoardingAssistantScreen(
                     val matchedEntry = entries.firstOrNull {
                         buildClarification(it.breed, it.ownerName) == pending.clarification
                     } ?: entries.first()
-                    photoUrl = findBoardingPhoto(context, pending.dogName, matchedEntry.lastBoarding, entries.distinctBy { it.ownerName }.size, apiKey)
+                    photoUrl = findBoardingPhoto(context, pending.dogName, matchedEntry.lastBoarding, matchedEntry.lastBoardingMonth, entries.distinctBy { it.ownerName }.size, apiKey)
                 }
             } catch (_: Exception) {}
         }
@@ -1062,7 +1062,7 @@ private fun ExistingDogFormDialog(
         if (entries.isEmpty()) { boardingPhotoUrl = null; return@LaunchedEffect }
         val matchedEntry = entries.firstOrNull { buildClarification(it.breed, it.ownerName) == clarification }
             ?: entries.first()
-        boardingPhotoUrl = findBoardingPhoto(context, dogName, matchedEntry.lastBoarding, entries.distinctBy { it.ownerName }.size, apiKey)
+        boardingPhotoUrl = findBoardingPhoto(context, dogName, matchedEntry.lastBoarding, matchedEntry.lastBoardingMonth, entries.distinctBy { it.ownerName }.size, apiKey)
     }
     val isDelete = pending.action == "delete"
 
@@ -1080,7 +1080,7 @@ private fun ExistingDogFormDialog(
                     if (cl.isNotBlank()) clarification = cl
                 }
                 if (isDelete && startDateStr.isBlank() && endDateStr.isBlank())
-                    parseLastBoardingDates(entry.lastBoarding)?.let { (s, e) ->
+                    parseLastBoardingDates(entry.lastBoarding, entry.lastBoardingMonth)?.let { (s, e) ->
                         startDateStr = s; endDateStr = e
                     }
             }
@@ -1108,7 +1108,7 @@ private fun ExistingDogFormDialog(
                 val firstEntry = clientDogs.firstOrNull { it.dogName.equals(name, ignoreCase = true) }
                 clarification = buildClarification(firstEntry?.breed ?: "", firstEntry?.ownerName ?: "")
                 if (isDelete) {
-                    parseLastBoardingDates(firstEntry?.lastBoarding ?: "")?.let { (s, e) ->
+                    parseLastBoardingDates(firstEntry?.lastBoarding ?: "", firstEntry?.lastBoardingMonth ?: "")?.let { (s, e) ->
                         startDateStr = s; endDateStr = e
                     }
                 }
@@ -1123,7 +1123,7 @@ private fun ExistingDogFormDialog(
             onSelect = { entry ->
                 clarification = buildClarification(entry.breed, entry.ownerName)
                 if (isDelete) {
-                    parseLastBoardingDates(entry.lastBoarding)?.let { (s, e) ->
+                    parseLastBoardingDates(entry.lastBoarding, entry.lastBoardingMonth)?.let { (s, e) ->
                         startDateStr = s; endDateStr = e
                     }
                 }
@@ -1387,7 +1387,8 @@ private data class ClientDog(
     val dogName: String,
     val ownerName: String,
     val breed: String = "",
-    val lastBoarding: String = ""
+    val lastBoarding: String = "",
+    val lastBoardingMonth: String = ""
 )
 
 private fun parseClientDogs(csv: String): List<ClientDog> =
@@ -1395,10 +1396,11 @@ private fun parseClientDogs(csv: String): List<ClientDog> =
         val cols = parseCsvLine(line)
         val dogName = cols.getOrNull(3)?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
         ClientDog(
-            dogName      = dogName,
-            ownerName    = cols.getOrNull(0)?.trim() ?: "",
-            breed        = cols.getOrNull(2)?.trim() ?: "",
-            lastBoarding = cols.getOrNull(7)?.trim() ?: ""
+            dogName           = dogName,
+            ownerName         = cols.getOrNull(0)?.trim() ?: "",
+            breed             = cols.getOrNull(2)?.trim() ?: "",
+            lastBoarding      = cols.getOrNull(7)?.trim() ?: "",
+            lastBoardingMonth = cols.getOrNull(4)?.trim() ?: ""
         )
     }
 
@@ -1409,7 +1411,7 @@ private fun buildClarification(breed: String, ownerName: String): String = when 
     else -> ""
 }
 
-private fun parseLastBoardingDates(s: String): Pair<String, String>? {
+private fun parseLastBoardingDates(s: String, yearHint: String = ""): Pair<String, String>? {
     if (s.isBlank()) return null
     val cleaned = s.substringBefore("(").trim()
     val parts = Regex("[–—\\-]").split(cleaned).map { it.trim() }.filter { it.isNotBlank() }
@@ -1424,18 +1426,26 @@ private fun parseLastBoardingDates(s: String): Pair<String, String>? {
     val (startDay, startMonth) = parseMonthDay(parts[0]) ?: return null
     val (endDay, endMonth)     = parseMonthDay(parts[1]) ?: return null
 
-    val cal = Calendar.getInstance()
-    val curMonth = cal.get(Calendar.MONTH) + 1
-    val curYear  = cal.get(Calendar.YEAR)
-    val startYear = if (startMonth < curMonth) curYear + 1 else curYear
-    val endYear   = if (endMonth < startMonth) startYear + 1 else startYear
+    val hintParts = yearHint.split(".")
+    val hintYear  = if (hintParts.size == 2) hintParts[1].toIntOrNull() else null
+    val endYear: Int
+    val startYear: Int
+    if (hintYear != null) {
+        endYear   = hintYear
+        startYear = if (startMonth <= endMonth) endYear else endYear - 1
+    } else {
+        val cal = Calendar.getInstance()
+        val curMonth = cal.get(Calendar.MONTH) + 1
+        val curYear  = cal.get(Calendar.YEAR)
+        startYear = if (startMonth < curMonth) curYear + 1 else curYear
+        endYear   = if (endMonth < startMonth) startYear + 1 else startYear
+    }
 
     return "%02d.%02d.%04d".format(startDay, startMonth, startYear) to
            "%02d.%02d.%04d".format(endDay, endMonth, endYear)
 }
 
-// Year logic for past dates: month > curMonth → previous year (was last year)
-private fun parsePastBoardingDates(s: String): Pair<String, String>? {
+private fun parsePastBoardingDates(s: String, yearHint: String = ""): Pair<String, String>? {
     if (s.isBlank()) return null
     val cleaned = s.substringBefore("(").trim()
     val parts = Regex("[–—\\-]").split(cleaned).map { it.trim() }.filter { it.isNotBlank() }
@@ -1447,11 +1457,20 @@ private fun parsePastBoardingDates(s: String): Pair<String, String>? {
     }
     val (startDay, startMonth) = parseMonthDay(parts[0]) ?: return null
     val (endDay, endMonth)     = parseMonthDay(parts[1]) ?: return null
-    val cal = Calendar.getInstance()
-    val curMonth = cal.get(Calendar.MONTH) + 1
-    val curYear  = cal.get(Calendar.YEAR)
-    val startYear = if (startMonth > curMonth) curYear - 1 else curYear
-    val endYear   = if (endMonth < startMonth) startYear + 1 else startYear
+    val hintParts = yearHint.split(".")
+    val hintYear  = if (hintParts.size == 2) hintParts[1].toIntOrNull() else null
+    val endYear: Int
+    val startYear: Int
+    if (hintYear != null) {
+        endYear   = hintYear
+        startYear = if (startMonth <= endMonth) endYear else endYear - 1
+    } else {
+        val cal = Calendar.getInstance()
+        val curMonth = cal.get(Calendar.MONTH) + 1
+        val curYear  = cal.get(Calendar.YEAR)
+        startYear = if (startMonth > curMonth) curYear - 1 else curYear
+        endYear   = if (endMonth < startMonth) startYear + 1 else startYear
+    }
     return "%02d.%02d.%04d".format(startDay, startMonth, startYear) to
            "%02d.%02d.%04d".format(endDay, endMonth, endYear)
 }
@@ -1460,6 +1479,7 @@ private suspend fun findBoardingPhoto(
     context: Context,
     dogName: String,
     lastBoarding: String,
+    lastBoardingMonth: String,
     uniqueOwnerCount: Int,
     apiKey: String
 ): String? = withContext(Dispatchers.IO) {
@@ -1470,7 +1490,7 @@ private suspend fun findBoardingPhoto(
         if (posts.isEmpty()) return@withContext null
         if (uniqueOwnerCount <= 1) return@withContext posts.firstOrNull()?.photoUrl
         if (lastBoarding.isBlank()) return@withContext posts.firstOrNull()?.photoUrl
-        val (startStr, endStr) = parsePastBoardingDates(lastBoarding)
+        val (startStr, endStr) = parsePastBoardingDates(lastBoarding, lastBoardingMonth)
             ?: return@withContext posts.firstOrNull()?.photoUrl
         val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
         val startDate = try { LocalDate.parse(startStr, fmt) } catch (_: Exception) { return@withContext posts.firstOrNull()?.photoUrl }
