@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -51,7 +53,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,9 +66,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.imageLoader
 import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -97,7 +100,6 @@ fun ClientsListScreen(
     onDeleteBoarding: (dogName: String, clarification: String) -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("clavim_prefs", Context.MODE_PRIVATE) }
     val photoPrefs = remember { context.getSharedPreferences("clients_photo_cache", Context.MODE_PRIVATE) }
     var searchQuery by remember { mutableStateOf("") }
@@ -111,6 +113,18 @@ fun ClientsListScreen(
     var photosToLoad by remember { mutableStateOf(0) }
     var photosLoaded by remember { mutableStateOf(0) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = prefs.getInt("clients_scroll_index", 0),
+        initialFirstVisibleItemScrollOffset = prefs.getInt("clients_scroll_offset", 0)
+    )
+    DisposableEffect(Unit) {
+        onDispose {
+            prefs.edit()
+                .putInt("clients_scroll_index", listState.firstVisibleItemIndex)
+                .putInt("clients_scroll_offset", listState.firstVisibleItemScrollOffset)
+                .apply()
+        }
+    }
 
     LaunchedEffect(refreshTrigger) {
         isLoading = true
@@ -140,6 +154,7 @@ fun ClientsListScreen(
             editor.apply()
             if (cached.isNotEmpty()) photoCache = cached
 
+            val apiKey = prefs.getString("openai_api_key", "") ?: ""
             val clientsByDogName = parsed.groupBy { it.dogName.lowercase() }
             val semaphore = Semaphore(5)
 
@@ -147,23 +162,29 @@ fun ClientsListScreen(
             val uncached = parsed.filter { !photoCache.containsKey(clientPhotoKey(it)) }
             photosToLoad = uncached.size
 
-            // Load uncached photos in background, max 5 concurrent
-            uncached.forEach { client ->
-                val key = clientPhotoKey(client)
-                scope.launch {
-                    semaphore.withPermit {
-                        val uniqueOwners = clientsByDogName[client.dogName.lowercase()]
-                            ?.distinctBy { it.ownerName.lowercase() }?.size ?: 1
-                        val url = findClientPhoto(context, client, uniqueOwners)
-                        if (url != null) {
-                            // Cache only successful results — never cache "not found"
-                            photoPrefs.edit().putString(key, url).apply()
-                            photoCache = photoCache + (key to url)
-                        } else {
-                            // Mark as tried this session (show placeholder), but don't persist
-                            photoCache = photoCache + (key to "")
+            // Load uncached photos — supervisorScope ties all children to this LaunchedEffect,
+            // so they are cancelled when refreshTrigger changes (prevents stale increments of photosLoaded)
+            supervisorScope {
+                uncached.forEach { client ->
+                    val key = clientPhotoKey(client)
+                    launch {
+                        semaphore.withPermit {
+                            val uniqueOwners = clientsByDogName[client.dogName.lowercase()]
+                                ?.distinctBy { it.ownerName.lowercase() }?.size ?: 1
+                            val url = findClientPhoto(context, client, uniqueOwners, apiKey)
+                            if (url != null) {
+                                // Persist URL immediately so it survives navigation cancellation
+                                photoPrefs.edit().putString(key, url).apply()
+                                // Preload image into Coil cache — if cancelled mid-download,
+                                // SharedPreferences already has the URL for next session
+                                val req = ImageRequest.Builder(context).data(url).build()
+                                context.imageLoader.execute(req)
+                                photoCache = photoCache + (key to url)
+                            } else {
+                                photoCache = photoCache + (key to "")
+                            }
+                            photosLoaded++
                         }
-                        photosLoaded++
                     }
                 }
             }
@@ -269,6 +290,7 @@ fun ClientsListScreen(
                 )
             }
             else -> LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .windowInsetsPadding(WindowInsets.navigationBars),
@@ -460,8 +482,13 @@ private fun ClientActionButton(
     }
 }
 
-private fun parseClientsFromCsv(csv: String): List<ClientInfo> =
-    csv.lines().drop(1).filter { it.isNotBlank() }.mapNotNull { line ->
+private fun isValidIsraeliPhone(phone: String): Boolean {
+    val digits = phone.filter { it.isDigit() }
+    return digits.length in 9..10 && digits.startsWith("0")
+}
+
+private fun parseClientsFromCsv(csv: String): List<ClientInfo> {
+    val all = csv.lines().drop(1).filter { it.isNotBlank() }.mapNotNull { line ->
         val cols = splitCsvLine(line)
         val ownerName = cols.getOrNull(0)?.trim().takeIf { !it.isNullOrBlank() } ?: return@mapNotNull null
         val dogName = cols.getOrNull(3)?.trim().takeIf { !it.isNullOrBlank() } ?: return@mapNotNull null
@@ -474,6 +501,14 @@ private fun parseClientsFromCsv(csv: String): List<ClientInfo> =
             lastBoardingMonth = cols.getOrNull(4)?.trim() ?: ""
         )
     }
+    // Per group (ownerName + dogName + breed): if phones differ and at least one is a valid
+    // Israeli number, drop rows with invalid numbers. If all are invalid, keep everyone.
+    return all.groupBy { Triple(it.ownerName.lowercase(), it.dogName.lowercase(), it.breed.lowercase()) }
+        .flatMap { (_, group) ->
+            val valid = group.filter { isValidIsraeliPhone(it.phone) }
+            if (valid.isNotEmpty()) valid else group
+        }
+}
 
 private fun splitCsvLine(line: String): List<String> {
     val cols = mutableListOf<String>()
@@ -502,10 +537,13 @@ private fun clientClarification(client: ClientInfo): String = when {
 private suspend fun findClientPhoto(
     context: Context,
     client: ClientInfo,
-    uniqueOwnerCount: Int
+    uniqueOwnerCount: Int,
+    apiKey: String
 ): String? = withContext(Dispatchers.IO) {
     try {
-        val posts = FosteringDatabase.get(context).dao().search(client.dogName)
+        val raw = FosteringDatabase.get(context).dao().search(client.dogName)
+        if (raw.isEmpty()) return@withContext null
+        val posts = filterFosteringPosts(raw, apiKey, client.dogName)
         if (posts.isEmpty()) return@withContext null
         if (uniqueOwnerCount <= 1) return@withContext posts.firstOrNull()?.photoUrl
         if (client.lastBoarding.isBlank()) return@withContext posts.firstOrNull()?.photoUrl
