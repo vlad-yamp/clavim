@@ -106,6 +106,11 @@ import java.util.Date
 import java.util.Locale
 import android.graphics.Color as AndroidColor
 import android.view.View
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -536,6 +541,7 @@ fun BoardingAssistantScreen(
     pendingExistingDogBooking?.let { pending ->
         ExistingDogFormDialog(
             pending = pending,
+            apiKey = apiKey,
             onConfirm = { dogNameField, clarificationField, startD, endD ->
                 pendingExistingDogBooking = null
                 val isDelete = pending.action == "delete"
@@ -1010,9 +1016,11 @@ fun BoardingAssistantScreen(
 @Composable
 private fun ExistingDogFormDialog(
     pending: ExistingDogBookingPending,
+    apiKey: String,
     onConfirm: (dogName: String, clarification: String, startDate: String, endDate: String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     var dogName         by remember { mutableStateOf(pending.dogName) }
     var clarification   by remember { mutableStateOf(pending.clarification) }
     var startDateStr    by remember { mutableStateOf(pending.startDate) }
@@ -1022,6 +1030,17 @@ private fun ExistingDogFormDialog(
     var showOwnerPicker by remember { mutableStateOf(false) }
     var clientDogs      by remember { mutableStateOf<List<ClientDog>>(emptyList()) }
     var isLoadingDogs   by remember { mutableStateOf(true) }
+    var boardingPhotoUrl by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(dogName, clarification, isLoadingDogs) {
+        boardingPhotoUrl = null
+        if (dogName.isBlank() || isLoadingDogs) return@LaunchedEffect
+        val entries = clientDogs.filter { it.dogName.equals(dogName, ignoreCase = true) }
+        if (entries.isEmpty()) return@LaunchedEffect
+        val matchedEntry = entries.firstOrNull { buildClarification(it.breed, it.ownerName) == clarification }
+            ?: entries.first()
+        boardingPhotoUrl = findBoardingPhoto(context, dogName, matchedEntry.lastBoarding, entries.size, apiKey)
+    }
     val isDelete = pending.action == "delete"
 
     LaunchedEffect(Unit) {
@@ -1165,6 +1184,21 @@ private fun ExistingDogFormDialog(
                                  tint = Color(0xFF5E35B1), modifier = Modifier.size(24.dp))
                         }
                     }
+                }
+
+                boardingPhotoUrl?.let { url ->
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(url)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Фото передержки",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 180.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
+                    )
                 }
             }
         },
@@ -1374,6 +1408,54 @@ private fun parseLastBoardingDates(s: String): Pair<String, String>? {
 
     return "%02d.%02d.%04d".format(startDay, startMonth, startYear) to
            "%02d.%02d.%04d".format(endDay, endMonth, endYear)
+}
+
+// Year logic for past dates: month > curMonth → previous year (was last year)
+private fun parsePastBoardingDates(s: String): Pair<String, String>? {
+    if (s.isBlank()) return null
+    val cleaned = s.substringBefore("(").trim()
+    val parts = Regex("[–—\\-]").split(cleaned).map { it.trim() }.filter { it.isNotBlank() }
+    if (parts.size < 2) return null
+    fun parseMonthDay(part: String): Pair<Int, Int>? {
+        val dm = part.split(".").map { it.trim() }
+        if (dm.size < 2) return null
+        return (dm[0].toIntOrNull() ?: return null) to (dm[1].toIntOrNull() ?: return null)
+    }
+    val (startDay, startMonth) = parseMonthDay(parts[0]) ?: return null
+    val (endDay, endMonth)     = parseMonthDay(parts[1]) ?: return null
+    val cal = Calendar.getInstance()
+    val curMonth = cal.get(Calendar.MONTH) + 1
+    val curYear  = cal.get(Calendar.YEAR)
+    val startYear = if (startMonth > curMonth) curYear - 1 else curYear
+    val endYear   = if (endMonth < startMonth) startYear + 1 else startYear
+    return "%02d.%02d.%04d".format(startDay, startMonth, startYear) to
+           "%02d.%02d.%04d".format(endDay, endMonth, endYear)
+}
+
+private suspend fun findBoardingPhoto(
+    context: Context,
+    dogName: String,
+    lastBoarding: String,
+    uniqueCount: Int,
+    apiKey: String
+): String? = withContext(Dispatchers.IO) {
+    try {
+        val raw = FosteringDatabase.get(context).dao().search(dogName)
+        if (raw.isEmpty()) return@withContext null
+        val posts = filterFosteringPosts(raw, apiKey, dogName)
+        if (posts.isEmpty()) return@withContext null
+        if (uniqueCount <= 1) return@withContext posts.firstOrNull()?.photoUrl
+        val (startStr, endStr) = parsePastBoardingDates(lastBoarding)
+            ?: return@withContext posts.firstOrNull()?.photoUrl
+        val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+        val startDate = try { LocalDate.parse(startStr, fmt) } catch (_: Exception) { return@withContext null }
+        val endDate   = try { LocalDate.parse(endStr,   fmt) } catch (_: Exception) { return@withContext null }
+        posts.firstOrNull { post ->
+            if (post.date.isBlank()) return@firstOrNull false
+            val d = try { LocalDate.parse(post.date, fmt) } catch (_: Exception) { return@firstOrNull false }
+            !d.isBefore(startDate) && !d.isAfter(endDate)
+        }?.photoUrl ?: posts.firstOrNull()?.photoUrl
+    } catch (_: Exception) { null }
 }
 
 private fun isValidDateFormat(s: String?): Boolean {
