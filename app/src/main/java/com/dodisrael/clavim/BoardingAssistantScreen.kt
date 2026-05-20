@@ -1033,8 +1033,10 @@ private fun ExistingDogFormDialog(
                 (clarification.isBlank() || cd.ownerName.equals(clarification, ignoreCase = true))
             } ?: clientDogs.firstOrNull { it.dogName.equals(dogName, ignoreCase = true) }
             if (entry != null) {
-                if (clarification.isBlank() && entry.ownerName.isNotBlank())
-                    clarification = entry.ownerName
+                if (clarification.isBlank()) {
+                    val cl = buildClarification(entry.breed, entry.ownerName)
+                    if (cl.isNotBlank()) clarification = cl
+                }
                 if (isDelete && startDateStr.isBlank() && endDateStr.isBlank())
                     parseLastBoardingDates(entry.lastBoarding)?.let { (s, e) ->
                         startDateStr = s; endDateStr = e
@@ -1045,7 +1047,7 @@ private fun ExistingDogFormDialog(
 
     val ownersForDog = remember(dogName, clientDogs) {
         clientDogs.filter { it.dogName.equals(dogName, ignoreCase = true) }
-                  .map { it.ownerName }.filter { it.isNotBlank() }.distinct()
+                  .distinctBy { it.ownerName }
     }
 
     if (showDatePicker) {
@@ -1061,12 +1063,10 @@ private fun ExistingDogFormDialog(
             dogs = clientDogs.map { it.dogName }.distinct().sortedBy { it },
             onSelect = { name ->
                 dogName = name
-                val owners = clientDogs.filter { it.dogName.equals(name, ignoreCase = true) }
-                                       .map { it.ownerName }.filter { it.isNotBlank() }.distinct()
-                if (owners.isNotEmpty()) clarification = owners[0]
+                val firstEntry = clientDogs.firstOrNull { it.dogName.equals(name, ignoreCase = true) }
+                clarification = buildClarification(firstEntry?.breed ?: "", firstEntry?.ownerName ?: "")
                 if (isDelete) {
-                    val entry = clientDogs.firstOrNull { it.dogName.equals(name, ignoreCase = true) }
-                    parseLastBoardingDates(entry?.lastBoarding ?: "")?.let { (s, e) ->
+                    parseLastBoardingDates(firstEntry?.lastBoarding ?: "")?.let { (s, e) ->
                         startDateStr = s; endDateStr = e
                     }
                 }
@@ -1078,13 +1078,10 @@ private fun ExistingDogFormDialog(
     if (showOwnerPicker) {
         OwnerSelectionDialog(
             owners = ownersForDog,
-            onSelect = { owner ->
-                clarification = owner
+            onSelect = { entry ->
+                clarification = buildClarification(entry.breed, entry.ownerName)
                 if (isDelete) {
-                    val entry = clientDogs.firstOrNull {
-                        it.dogName.equals(dogName, ignoreCase = true) && it.ownerName == owner
-                    }
-                    parseLastBoardingDates(entry?.lastBoarding ?: "")?.let { (s, e) ->
+                    parseLastBoardingDates(entry.lastBoarding)?.let { (s, e) ->
                         startDateStr = s; endDateStr = e
                     }
                 }
@@ -1153,7 +1150,8 @@ private fun ExistingDogFormDialog(
                         label = { Text("Уточнение") },
                         placeholder = { Text("порода, хозяин...", fontSize = 13.sp) },
                         modifier = Modifier.weight(1f),
-                        singleLine = true
+                        maxLines = 3,
+                        minLines = 1
                     )
                     if (ownersForDog.size > 1) {
                         IconButton(
@@ -1330,6 +1328,7 @@ private fun normalizeIsraeliPhone(raw: String): String {
 private data class ClientDog(
     val dogName: String,
     val ownerName: String,
+    val breed: String = "",
     val lastBoarding: String = ""
 )
 
@@ -1340,9 +1339,17 @@ private fun parseClientDogs(csv: String): List<ClientDog> =
         ClientDog(
             dogName      = dogName,
             ownerName    = cols.getOrNull(0)?.trim() ?: "",
+            breed        = cols.getOrNull(2)?.trim() ?: "",
             lastBoarding = cols.getOrNull(7)?.trim() ?: ""
         )
     }
+
+private fun buildClarification(breed: String, ownerName: String): String = when {
+    breed.isNotBlank() && ownerName.isNotBlank() -> "$breed, Хозяин: $ownerName"
+    ownerName.isNotBlank() -> "Хозяин: $ownerName"
+    breed.isNotBlank() -> breed
+    else -> ""
+}
 
 private fun parseLastBoardingDates(s: String): Pair<String, String>? {
     if (s.isBlank()) return null
@@ -1425,8 +1432,8 @@ private fun DogSelectionDialog(
 
 @Composable
 private fun OwnerSelectionDialog(
-    owners: List<String>,
-    onSelect: (String) -> Unit,
+    owners: List<ClientDog>,
+    onSelect: (ClientDog) -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -1439,12 +1446,12 @@ private fun OwnerSelectionDialog(
                     .heightIn(max = 300.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                owners.forEach { owner ->
+                owners.forEach { entry ->
                     Text(
-                        owner,
+                        buildClarification(entry.breed, entry.ownerName),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelect(owner) }
+                            .clickable { onSelect(entry) }
                             .padding(vertical = 10.dp, horizontal = 4.dp),
                         fontSize = 15.sp
                     )
