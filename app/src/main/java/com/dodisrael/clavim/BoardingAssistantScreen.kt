@@ -210,7 +210,7 @@ fun BoardingAssistantScreen(
                     val matchedEntry = entries.firstOrNull {
                         buildClarification(it.breed, it.ownerName) == pending.clarification
                     } ?: entries.first()
-                    photoUrl = findBoardingPhoto(context, pending.dogName, matchedEntry.lastBoarding, entries.size, apiKey)
+                    photoUrl = findBoardingPhoto(context, pending.dogName, matchedEntry.lastBoarding, entries.distinctBy { it.ownerName }.size, apiKey)
                 }
             } catch (_: Exception) {}
         }
@@ -1062,7 +1062,7 @@ private fun ExistingDogFormDialog(
         if (entries.isEmpty()) { boardingPhotoUrl = null; return@LaunchedEffect }
         val matchedEntry = entries.firstOrNull { buildClarification(it.breed, it.ownerName) == clarification }
             ?: entries.first()
-        boardingPhotoUrl = findBoardingPhoto(context, dogName, matchedEntry.lastBoarding, entries.size, apiKey)
+        boardingPhotoUrl = findBoardingPhoto(context, dogName, matchedEntry.lastBoarding, entries.distinctBy { it.ownerName }.size, apiKey)
     }
     val isDelete = pending.action == "delete"
 
@@ -1460,7 +1460,7 @@ private suspend fun findBoardingPhoto(
     context: Context,
     dogName: String,
     lastBoarding: String,
-    uniqueCount: Int,
+    uniqueOwnerCount: Int,
     apiKey: String
 ): String? = withContext(Dispatchers.IO) {
     try {
@@ -1468,12 +1468,13 @@ private suspend fun findBoardingPhoto(
         if (raw.isEmpty()) return@withContext null
         val posts = filterFosteringPosts(raw, apiKey, dogName)
         if (posts.isEmpty()) return@withContext null
-        if (uniqueCount <= 1) return@withContext posts.firstOrNull()?.photoUrl
+        if (uniqueOwnerCount <= 1) return@withContext posts.firstOrNull()?.photoUrl
+        if (lastBoarding.isBlank()) return@withContext posts.firstOrNull()?.photoUrl
         val (startStr, endStr) = parsePastBoardingDates(lastBoarding)
             ?: return@withContext posts.firstOrNull()?.photoUrl
         val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
-        val startDate = try { LocalDate.parse(startStr, fmt) } catch (_: Exception) { return@withContext null }
-        val endDate   = try { LocalDate.parse(endStr,   fmt) } catch (_: Exception) { return@withContext null }
+        val startDate = try { LocalDate.parse(startStr, fmt) } catch (_: Exception) { return@withContext posts.firstOrNull()?.photoUrl }
+        val endDate   = try { LocalDate.parse(endStr,   fmt) } catch (_: Exception) { return@withContext posts.firstOrNull()?.photoUrl }
         posts.firstOrNull { post ->
             if (post.date.isBlank()) return@firstOrNull false
             val d = try { LocalDate.parse(post.date, fmt) } catch (_: Exception) { return@firstOrNull false }
