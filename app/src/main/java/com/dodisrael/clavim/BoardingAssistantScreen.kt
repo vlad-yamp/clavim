@@ -196,6 +196,26 @@ fun BoardingAssistantScreen(
             else     -> null
         }
     ) }
+    var existingDogDialogState by remember { mutableStateOf<Pair<ExistingDogBookingPending, String?>?>(null) }
+    LaunchedEffect(pendingExistingDogBooking) {
+        val pending = pendingExistingDogBooking ?: run { existingDogDialogState = null; return@LaunchedEffect }
+        existingDogDialogState = null
+        var photoUrl: String? = null
+        if (pending.dogName.isNotBlank()) {
+            try {
+                val csv = withContext(Dispatchers.IO) { fetchCsv(CLIENTS_CSV_URL) }
+                val dogs = parseClientDogs(csv)
+                val entries = dogs.filter { it.dogName.equals(pending.dogName, ignoreCase = true) }
+                if (entries.isNotEmpty()) {
+                    val matchedEntry = entries.firstOrNull {
+                        buildClarification(it.breed, it.ownerName) == pending.clarification
+                    } ?: entries.first()
+                    photoUrl = findBoardingPhoto(context, pending.dogName, matchedEntry.lastBoarding, entries.size, apiKey)
+                }
+            } catch (_: Exception) {}
+        }
+        existingDogDialogState = pending to photoUrl
+    }
     var pendingNewDogBooking by remember { mutableStateOf<NewDogBookingPending?>(
         if (initialFormAction == "new") NewDogBookingPending("", "") else null
     ) }
@@ -538,12 +558,14 @@ fun BoardingAssistantScreen(
         }
     }
 
-    pendingExistingDogBooking?.let { pending ->
+    existingDogDialogState?.let { (pending, initialPhotoUrl) ->
         ExistingDogFormDialog(
             pending = pending,
+            initialPhotoUrl = initialPhotoUrl,
             apiKey = apiKey,
             onConfirm = { dogNameField, clarificationField, startD, endD ->
                 pendingExistingDogBooking = null
+                existingDogDialogState = null
                 val isDelete = pending.action == "delete"
                 val webUrl = prefs.getString("apps_script_url", "") ?: ""
                 val capturedApiKey = apiKey
@@ -613,6 +635,7 @@ fun BoardingAssistantScreen(
             },
             onDismiss = {
                 pendingExistingDogBooking = null
+                existingDogDialogState = null
                 if (fromMenu) onBack() else answer = "<p>Запись отменена.</p>"
             }
         )
@@ -1016,6 +1039,7 @@ fun BoardingAssistantScreen(
 @Composable
 private fun ExistingDogFormDialog(
     pending: ExistingDogBookingPending,
+    initialPhotoUrl: String? = null,
     apiKey: String,
     onConfirm: (dogName: String, clarification: String, startDate: String, endDate: String) -> Unit,
     onDismiss: () -> Unit
@@ -1030,13 +1054,12 @@ private fun ExistingDogFormDialog(
     var showOwnerPicker by remember { mutableStateOf(false) }
     var clientDogs      by remember { mutableStateOf<List<ClientDog>>(emptyList()) }
     var isLoadingDogs   by remember { mutableStateOf(true) }
-    var boardingPhotoUrl by remember { mutableStateOf<String?>(null) }
+    var boardingPhotoUrl by remember { mutableStateOf(initialPhotoUrl) }
 
     LaunchedEffect(dogName, clarification, isLoadingDogs) {
-        boardingPhotoUrl = null
         if (dogName.isBlank() || isLoadingDogs) return@LaunchedEffect
         val entries = clientDogs.filter { it.dogName.equals(dogName, ignoreCase = true) }
-        if (entries.isEmpty()) return@LaunchedEffect
+        if (entries.isEmpty()) { boardingPhotoUrl = null; return@LaunchedEffect }
         val matchedEntry = entries.firstOrNull { buildClarification(it.breed, it.ownerName) == clarification }
             ?: entries.first()
         boardingPhotoUrl = findBoardingPhoto(context, dogName, matchedEntry.lastBoarding, entries.size, apiKey)
@@ -1121,6 +1144,21 @@ private fun ExistingDogFormDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
 
+                boardingPhotoUrl?.let { url ->
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(url)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Фото передержки",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 210.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+
                 OutlinedButton(
                     onClick = { showDatePicker = true },
                     modifier = Modifier.fillMaxWidth()
@@ -1186,20 +1224,6 @@ private fun ExistingDogFormDialog(
                     }
                 }
 
-                boardingPhotoUrl?.let { url ->
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(url)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = "Фото передержки",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 180.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                }
             }
         },
         confirmButton = {
