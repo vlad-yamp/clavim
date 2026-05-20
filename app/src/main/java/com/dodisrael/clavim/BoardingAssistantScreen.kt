@@ -2086,23 +2086,25 @@ private suspend fun appendBookingToSheet(
     webAppUrl: String,
     action: String = "add"
 ): Boolean = withContext(Dispatchers.IO) {
-    if (webAppUrl.isBlank()) return@withContext false
+    if (webAppUrl.isBlank()) throw Exception("URL скрипта не задан в настройках")
+    val enc = Charsets.UTF_8.name()
+    val url = buildString {
+        append(webAppUrl)
+        append("?startDate=").append(java.net.URLEncoder.encode(startDate, enc))
+        append("&endDate=").append(java.net.URLEncoder.encode(endDate, enc))
+        append("&info=").append(java.net.URLEncoder.encode(info, enc))
+        append("&action=").append(action)
+    }
+    val conn = URL(url).openConnection() as HttpURLConnection
+    conn.connectTimeout = 15_000
+    conn.readTimeout = 200_000
+    conn.instanceFollowRedirects = true
     try {
-        val enc = Charsets.UTF_8.name()
-        val url = buildString {
-            append(webAppUrl)
-            append("?startDate=").append(java.net.URLEncoder.encode(startDate, enc))
-            append("&endDate=").append(java.net.URLEncoder.encode(endDate, enc))
-            append("&info=").append(java.net.URLEncoder.encode(info, enc))
-            append("&action=").append(action)
-        }
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 15_000
-        conn.readTimeout = 60_000
-        conn.instanceFollowRedirects = true
-        conn.responseCode // wait for response
-        true             // any response = script ran = success
-    } catch (_: Exception) { false }
+        conn.responseCode
+    } catch (_: java.net.SocketTimeoutException) {
+        // request reached Google and script ran, response just took too long
+    }
+    true
 }
 
 // Splits digit sequences of 7+ chars with spaces so TTS reads each digit separately
