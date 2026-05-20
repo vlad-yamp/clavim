@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -68,21 +69,26 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
 
 private const val CLIENTS_SHEET_CSV =
     "https://docs.google.com/spreadsheets/d/1P44f7Fdk8_TiB6Rn67YLNbfnVHK7TIThMLsDiN6sgAs/export?format=csv&gid=1215152509"
+private const val SHEET_ID = "1P44f7Fdk8_TiB6Rn67YLNbfnVHK7TIThMLsDiN6sgAs"
+private const val CLIENTS_SHEET_GID = 1215152509
 
 private data class ClientInfo(
     val ownerName: String,
@@ -90,7 +96,8 @@ private data class ClientInfo(
     val breed: String,
     val dogName: String,
     val lastBoarding: String = "",
-    val lastBoardingMonth: String = ""
+    val lastBoardingMonth: String = "",
+    val boardingHistory: String = ""
 )
 
 @Composable
@@ -113,6 +120,7 @@ fun ClientsListScreen(
     var photosToLoad by remember { mutableStateOf(0) }
     var photosLoaded by remember { mutableStateOf(0) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
+    var showHistoryFor by remember { mutableStateOf<ClientInfo?>(null) }
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = prefs.getInt("clients_scroll_index", 0),
         initialFirstVisibleItemScrollOffset = prefs.getInt("clients_scroll_offset", 0)
@@ -132,14 +140,19 @@ fun ClientsListScreen(
         photosToLoad = 0
         photosLoaded = 0
         try {
-            val csv = withContext(Dispatchers.IO) {
-                val conn = URL(CLIENTS_SHEET_CSV).openConnection() as HttpURLConnection
-                conn.connectTimeout = 10_000
-                conn.readTimeout = 10_000
-                conn.instanceFollowRedirects = true
-                conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+            val googleApiKey = prefs.getString("google_api_key", "") ?: ""
+            val (csv, notes) = withContext(Dispatchers.IO) {
+                val csvJob = async {
+                    val conn = URL(CLIENTS_SHEET_CSV).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 10_000
+                    conn.readTimeout = 10_000
+                    conn.instanceFollowRedirects = true
+                    conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+                }
+                val notesJob = async { fetchSheetNotes(googleApiKey) }
+                csvJob.await() to notesJob.await()
             }
-            val parsed = parseClientsFromCsv(csv)
+            val parsed = parseClientsFromCsv(csv, notes)
             clients = parsed
             isLoading = false
 
@@ -221,6 +234,10 @@ fun ClientsListScreen(
                 TextButton(onClick = { showClearCacheDialog = false }) { Text("Отмена") }
             }
         )
+    }
+
+    showHistoryFor?.let { client ->
+        BoardingHistoryDialog(client = client, onDismiss = { showHistoryFor = null })
     }
 
     fullScreenPhotoUrl?.let { url ->
@@ -310,7 +327,8 @@ fun ClientsListScreen(
                         onDeleteBoarding = {
                             onDeleteBoarding(client.dogName, clientClarification(client))
                         },
-                        onPhotoClick = { url -> fullScreenPhotoUrl = url }
+                        onPhotoClick = { url -> fullScreenPhotoUrl = url },
+                        onHistoryClick = { showHistoryFor = client }
                     )
                 }
                 item { Spacer(Modifier.height(8.dp)) }
@@ -327,7 +345,8 @@ private fun ClientCard(
     onWhatsApp: () -> Unit,
     onRepeatBoarding: () -> Unit,
     onDeleteBoarding: () -> Unit,
-    onPhotoClick: (String) -> Unit
+    onPhotoClick: (String) -> Unit,
+    onHistoryClick: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -341,7 +360,10 @@ private fun ClientCard(
                 .height(IntrinsicSize.Min),
             verticalAlignment = Alignment.Top
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onHistoryClick)
+            ) {
                 Text(
                     text = client.ownerName,
                     fontWeight = FontWeight.Bold,
@@ -487,27 +509,158 @@ private fun isValidIsraeliPhone(phone: String): Boolean {
     return digits.length in 9..10 && digits.startsWith("0")
 }
 
-private fun parseClientsFromCsv(csv: String): List<ClientInfo> {
-    val all = csv.lines().drop(1).filter { it.isNotBlank() }.mapNotNull { line ->
+// notes: key = "ownerName_lower|dogName_lower" → boarding history text
+private fun parseClientsFromCsv(csv: String, notes: Map<String, String> = emptyMap()): List<ClientInfo> {
+    val all = csv.lines().drop(1).mapIndexedNotNull { _, line ->
+        if (line.isBlank()) return@mapIndexedNotNull null
         val cols = splitCsvLine(line)
-        val ownerName = cols.getOrNull(0)?.trim().takeIf { !it.isNullOrBlank() } ?: return@mapNotNull null
-        val dogName = cols.getOrNull(3)?.trim().takeIf { !it.isNullOrBlank() } ?: return@mapNotNull null
+        val ownerName = cols.getOrNull(0)?.trim().takeIf { !it.isNullOrBlank() } ?: return@mapIndexedNotNull null
+        val dogName = cols.getOrNull(3)?.trim().takeIf { !it.isNullOrBlank() } ?: return@mapIndexedNotNull null
         ClientInfo(
             ownerName = ownerName,
             phone = cols.getOrNull(1)?.trim() ?: "",
             breed = cols.getOrNull(2)?.trim() ?: "",
             dogName = dogName,
             lastBoarding = cols.getOrNull(7)?.trim() ?: "",
-            lastBoardingMonth = cols.getOrNull(4)?.trim() ?: ""
+            lastBoardingMonth = cols.getOrNull(4)?.trim() ?: "",
+            boardingHistory = notes["${ownerName.lowercase()}|${dogName.lowercase()}"] ?: ""
         )
     }
     // Per group (ownerName + dogName + breed): if phones differ and at least one is a valid
     // Israeli number, drop rows with invalid numbers. If all are invalid, keep everyone.
+    // Propagate boarding history from any row in the group that has it.
     return all.groupBy { Triple(it.ownerName.lowercase(), it.dogName.lowercase(), it.breed.lowercase()) }
         .flatMap { (_, group) ->
+            val history = group.firstOrNull { it.boardingHistory.isNotBlank() }?.boardingHistory ?: ""
             val valid = group.filter { isValidIsraeliPhone(it.phone) }
-            if (valid.isNotEmpty()) valid else group
+            val base = if (valid.isNotEmpty()) valid else group
+            if (history.isBlank()) base
+            else base.map { if (it.boardingHistory.isBlank()) it.copy(boardingHistory = history) else it }
         }
+}
+
+// Returns map keyed by "ownerName_lower|dogName_lower" → note text.
+// Matching by content (not row index) avoids mismatches caused by hidden/filtered rows.
+private suspend fun fetchSheetNotes(apiKey: String): Map<String, String> = withContext(Dispatchers.IO) {
+    if (apiKey.isBlank()) return@withContext emptyMap()
+    try {
+        // Step 1: resolve sheet name from GID (ranges param requires sheet title, not GID)
+        val metaConn = URL(
+            "https://sheets.googleapis.com/v4/spreadsheets/$SHEET_ID?fields=sheets%2Fproperties&key=$apiKey"
+        ).openConnection() as HttpURLConnection
+        metaConn.connectTimeout = 10_000
+        metaConn.readTimeout = 10_000
+        val sheetsArr = JSONObject(metaConn.inputStream.bufferedReader(Charsets.UTF_8).readText())
+            .getJSONArray("sheets")
+        var sheetTitle = ""
+        for (i in 0 until sheetsArr.length()) {
+            val props = sheetsArr.getJSONObject(i).getJSONObject("properties")
+            if (props.getInt("sheetId") == CLIENTS_SHEET_GID) {
+                sheetTitle = props.getString("title"); break
+            }
+        }
+        if (sheetTitle.isBlank()) return@withContext emptyMap()
+
+        // Step 2: fetch columns A–H (owner col A, dog col D, note on col H)
+        val range = URLEncoder.encode("$sheetTitle!A:H", "UTF-8")
+        val dataConn = URL(
+            "https://sheets.googleapis.com/v4/spreadsheets/$SHEET_ID" +
+            "?includeGridData=true&ranges=$range" +
+            "&fields=sheets%2Fdata%2FrowData%2Fvalues(formattedValue,note)&key=$apiKey"
+        ).openConnection() as HttpURLConnection
+        dataConn.connectTimeout = 15_000
+        dataConn.readTimeout = 15_000
+        val rowData = JSONObject(dataConn.inputStream.bufferedReader(Charsets.UTF_8).readText())
+            .getJSONArray("sheets").getJSONObject(0)
+            .getJSONArray("data").getJSONObject(0)
+            .optJSONArray("rowData") ?: return@withContext emptyMap()
+
+        // Build key "ownerName|dogName" → note. Skip header (i=0).
+        buildMap {
+            for (i in 1 until rowData.length()) {
+                val cells = rowData.getJSONObject(i).optJSONArray("values") ?: continue
+                val owner = cells.optJSONObject(0)?.optString("formattedValue", "")?.trim() ?: ""
+                val dog   = cells.optJSONObject(3)?.optString("formattedValue", "")?.trim() ?: ""
+                val note  = cells.optJSONObject(7)?.optString("note", "").orEmpty()
+                if (owner.isNotBlank() && dog.isNotBlank() && note.isNotBlank()) {
+                    val key = "${owner.lowercase()}|${dog.lowercase()}"
+                    putIfAbsent(key, note)  // keep first occurrence per (owner, dog) pair
+                }
+            }
+        }
+    } catch (_: Exception) { emptyMap() }
+}
+
+@Composable
+private fun BoardingHistoryDialog(client: ClientInfo, onDismiss: () -> Unit) {
+    val today = remember { LocalDate.now() }
+    val fmt = remember { DateTimeFormatter.ofPattern("dd.MM.yyyy") }
+
+    // Split by any line ending, drop blank lines, classify by first date in each line
+    val lines = remember(client.boardingHistory) {
+        client.boardingHistory.lines().map { it.trim() }.filter { it.isNotBlank() }
+    }
+    val past   = remember(lines) { lines.filter { line ->
+        val d = try { LocalDate.parse(line.substringBefore(" "), fmt) } catch (_: Exception) { null }
+        d != null && d.isBefore(today)
+    }}
+    val future = remember(lines) { lines.filter { line ->
+        val d = try { LocalDate.parse(line.substringBefore(" "), fmt) } catch (_: Exception) { null }
+        d == null || !d.isBefore(today)
+    }}
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("История — ${client.dogName}") },
+        text = {
+            if (lines.isEmpty()) {
+                Text("История не найдена", color = Color.Gray, fontSize = 14.sp)
+            } else {
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    if (future.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Предстоящие",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF1565C0),
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            )
+                        }
+                        items(future) { line ->
+                            Text(text = line, fontSize = 14.sp, lineHeight = 20.sp, color = Color(0xFF1A237E))
+                        }
+                    }
+                    if (past.isNotEmpty()) {
+                        item {
+                            if (future.isNotEmpty()) {
+                                androidx.compose.material3.HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 6.dp),
+                                    color = Color(0xFFE0E0E0)
+                                )
+                            }
+                            Text(
+                                "Прошедшие",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF9E9E9E),
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            )
+                        }
+                        items(past) { line ->
+                            Text(text = line, fontSize = 13.sp, lineHeight = 19.sp, color = Color(0xFF9E9E9E))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Закрыть") }
+        }
+    )
 }
 
 private fun splitCsvLine(line: String): List<String> {

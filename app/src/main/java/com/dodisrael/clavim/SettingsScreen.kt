@@ -49,13 +49,16 @@ fun SettingsScreen(onBack: () -> Unit) {
     val prefs = remember { context.getSharedPreferences("clavim_prefs", Context.MODE_PRIVATE) }
 
     var apiKey by remember { mutableStateOf(prefs.getString("openai_api_key", "") ?: "") }
+    var googleApiKey by remember { mutableStateOf(prefs.getString("google_api_key", "") ?: "") }
     var voiceAutoSpeak by remember { mutableStateOf(prefs.getBoolean("voice_auto_speak", true)) }
     var appsScriptUrl by remember { mutableStateOf(prefs.getString("apps_script_url", "") ?: "") }
     var addressesScriptUrl by remember { mutableStateOf(prefs.getString("addresses_script_url", "") ?: "") }
     var keySaved by remember { mutableStateOf(false) }
+    var googleKeySaved by remember { mutableStateOf(false) }
     var scriptUrlSaved by remember { mutableStateOf(false) }
     var addressesScriptUrlSaved by remember { mutableStateOf(false) }
     var keyVisible by remember { mutableStateOf(false) }
+    var googleKeyVisible by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
@@ -115,6 +118,53 @@ fun SettingsScreen(onBack: () -> Unit) {
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A))
                     ) {
                         Text(if (keySaved) "Сохранено ✓" else "Сохранить", color = Color.White)
+                    }
+                }
+            }
+
+            // Google API key
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("API ключ Google Sheets", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Text(
+                        "Используется для чтения истории передержки из комментариев таблицы клиентов.",
+                        fontSize = 13.sp, color = Color(0xFF757575)
+                    )
+                    OutlinedTextField(
+                        value = googleApiKey,
+                        onValueChange = { googleApiKey = it; googleKeySaved = false },
+                        placeholder = { Text("AIza...") },
+                        singleLine = true,
+                        visualTransformation = if (googleKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { googleKeyVisible = !googleKeyVisible }) {
+                                Icon(
+                                    imageVector = if (googleKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (googleKeyVisible) "Скрыть" else "Показать"
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            prefs.edit().putString("google_api_key", googleApiKey.trim()).apply()
+                            googleApiKey = googleApiKey.trim()
+                            googleKeySaved = true
+                        },
+                        enabled = googleApiKey.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                    ) {
+                        Text(if (googleKeySaved) "Сохранено ✓" else "Сохранить", color = Color.White)
                     }
                 }
             }
