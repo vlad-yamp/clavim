@@ -5,6 +5,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -17,9 +21,26 @@ import androidx.compose.ui.Modifier
 import com.dodisrael.clavim.ui.theme.ClavimTheme
 
 class MainActivity : FragmentActivity() {
+
+    companion object {
+        private val syncInProgress = AtomicBoolean(false)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        GlobalScope.launch(Dispatchers.IO) {
+            if (!syncInProgress.compareAndSet(false, true)) return@launch
+            try {
+                val count = FosteringDatabase.get(applicationContext).dao().countPosts()
+                if (count > 0) {
+                    syncFosteringChannel(applicationContext, incremental = false, onProgress = {})
+                }
+            } catch (_: Exception) {
+            } finally {
+                syncInProgress.set(false)
+            }
+        }
         setContent {
             ClavimTheme {
                 Surface(
