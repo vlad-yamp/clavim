@@ -62,6 +62,9 @@ fun AppContent() {
     var webViewReturnScreen by remember { mutableStateOf(Screen.MAIN) }
     var boardingInitialAction by remember { mutableStateOf<String?>(null) }
     var boardingReturnScreen by remember { mutableStateOf(Screen.MAIN) }
+    var boardingPresetDogName by remember { mutableStateOf("") }
+    var boardingPresetClarification by remember { mutableStateOf("") }
+    var boardingOnlyMode by remember { mutableStateOf(false) }
 
     fun openWebView(url: String, title: String, returnTo: Screen) {
         webViewUrl = url
@@ -78,7 +81,14 @@ fun AppContent() {
             Screen.WEB_VIEW -> webViewReturnScreen
             Screen.SETTINGS -> Screen.MAIN
             Screen.FOSTERING_MENU -> Screen.MAIN
-            Screen.BOARDING_ASSISTANT -> { boardingInitialAction = null; boardingReturnScreen }
+            Screen.FOSTERING_CLIENTS -> Screen.FOSTERING_MENU
+            Screen.BOARDING_ASSISTANT -> {
+                boardingInitialAction = null
+                boardingPresetDogName = ""
+                boardingPresetClarification = ""
+                boardingOnlyMode = false
+                boardingReturnScreen
+            }
             else -> Screen.MAIN
         }
     }
@@ -161,12 +171,41 @@ fun AppContent() {
             onDeleteDogClick = {
                 boardingInitialAction = "delete"; boardingReturnScreen = Screen.FOSTERING_MENU
                 screen = Screen.BOARDING_ASSISTANT
+            },
+            onClientsClick = { screen = Screen.FOSTERING_CLIENTS }
+        )
+        Screen.FOSTERING_CLIENTS   -> ClientsListScreen(
+            onBack = { screen = Screen.FOSTERING_MENU },
+            onRepeatBoarding = { dogName, clarification ->
+                boardingPresetDogName = dogName
+                boardingPresetClarification = clarification
+                boardingInitialAction = "add"
+                boardingOnlyMode = true
+                boardingReturnScreen = Screen.FOSTERING_CLIENTS
+                screen = Screen.BOARDING_ASSISTANT
+            },
+            onDeleteBoarding = { dogName, clarification ->
+                boardingPresetDogName = dogName
+                boardingPresetClarification = clarification
+                boardingInitialAction = "delete"
+                boardingOnlyMode = true
+                boardingReturnScreen = Screen.FOSTERING_CLIENTS
+                screen = Screen.BOARDING_ASSISTANT
             }
         )
         Screen.BOARDING_ASSISTANT  -> BoardingAssistantScreen(
-            onBack = { boardingInitialAction = null; screen = boardingReturnScreen },
+            onBack = {
+                boardingInitialAction = null
+                boardingPresetDogName = ""
+                boardingPresetClarification = ""
+                boardingOnlyMode = false
+                screen = boardingReturnScreen
+            },
             onTelegramFosteringClick = { screen = Screen.TELEGRAM_FOSTERING },
-            initialFormAction = boardingInitialAction
+            initialFormAction = boardingInitialAction,
+            presetDogName = boardingPresetDogName,
+            presetClarification = boardingPresetClarification,
+            boardingOnly = boardingOnlyMode
         )
     }
 }

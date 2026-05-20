@@ -167,7 +167,10 @@ private data class NewDogBookingPending(
 fun BoardingAssistantScreen(
     onBack: () -> Unit,
     onTelegramFosteringClick: () -> Unit = {},
-    initialFormAction: String? = null
+    initialFormAction: String? = null,
+    presetDogName: String = "",
+    presetClarification: String = "",
+    boardingOnly: Boolean = false
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -191,8 +194,8 @@ fun BoardingAssistantScreen(
 
     var pendingExistingDogBooking by remember { mutableStateOf<ExistingDogBookingPending?>(
         when (initialFormAction) {
-            "add"    -> ExistingDogBookingPending("", "", "")
-            "delete" -> ExistingDogBookingPending("", "", "", "", "delete")
+            "add"    -> ExistingDogBookingPending(dogName = presetDogName, startDate = "", endDate = "", clarification = presetClarification)
+            "delete" -> ExistingDogBookingPending(dogName = presetDogName, startDate = "", endDate = "", clarification = presetClarification, action = "delete")
             else     -> null
         }
     ) }
@@ -695,15 +698,23 @@ fun BoardingAssistantScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
-            title = "Голосовой ассистент",
-            subtitle = "Передержка, клиенты, занятия, фото",
+            title = if (boardingOnly) (if (initialFormAction == "delete") "Удаление из передержки" else "Повторная передержка")
+                    else "Голосовой ассистент",
+            subtitle = if (boardingOnly) "Заполните форму" else "Передержка, клиенты, занятия, фото",
             showBack = true,
             onBack = {
                 stopSpeaking()
                 onBack()
             }
         )
-        Column(
+        if (boardingOnly) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                if (existingDogDialogState == null) CircularProgressIndicator()
+            }
+        } else Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
