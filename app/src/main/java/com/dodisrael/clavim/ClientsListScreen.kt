@@ -421,7 +421,7 @@ fun ClientsListScreen(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF7B1FA2).copy(alpha = 0.1f))
+                        .background(Color(0xFF2E7D32).copy(alpha = 0.1f))
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -667,7 +667,7 @@ private fun ClientCard(
                     .width(100.dp)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFFF3E5F5))
+                    .background(Color(0xFFE8F5E9))
                     .then(
                         if (photoUrl?.isNotBlank() == true)
                             Modifier.clickable { onPhotoClick(photoUrl) }
@@ -684,7 +684,7 @@ private fun ClientCard(
                     photoUrl.isBlank() -> Icon(
                         Icons.Default.Pets,
                         contentDescription = null,
-                        tint = Color(0xFFCE93D8),
+                        tint = Color(0xFF81C784),
                         modifier = Modifier.size(40.dp)
                     )
                     else -> AsyncImage(
@@ -1182,6 +1182,12 @@ private fun BoardingChartDialog(
         (chartEnd.toEpochDay() - chartStart.toEpochDay() + 1).toInt()
     }
     val today = remember { LocalDate.now() }
+    val dogCountPerDay = remember(intervals, chartStart, totalDays) {
+        IntArray(totalDays) { offset ->
+            val date = chartStart.plusDays(offset.toLong())
+            intervals.count { !date.isBefore(it.actualStart) && !date.isAfter(it.actualEnd) }
+        }
+    }
 
     val monthNames = listOf("Январь","Февраль","Март","Апрель","Май","Июнь",
                             "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь")
@@ -1214,11 +1220,19 @@ private fun BoardingChartDialog(
                                 "%2d %s".format(date.dayOfMonth, dowLabels[date.dayOfWeek.value - 1])
                             else
                                 "%2d %s".format(date.dayOfMonth, monthAbbr[date.monthValue - 1])
+                            val overloaded = dogCountPerDay[offset] > 3
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(rowHeightDp)
-                                    .background(if (inMonth) Color.Transparent else Color(0xFFF5F5F5)),
+                                    .background(
+                                        when {
+                                            overloaded && inMonth  -> Color(0xFFD32F2F).copy(alpha = 0.10f)
+                                            overloaded && !inMonth -> Color(0xFFD32F2F).copy(alpha = 0.07f)
+                                            !inMonth               -> Color(0xFFF5F5F5)
+                                            else                   -> Color.Transparent
+                                        }
+                                    ),
                                 contentAlignment = Alignment.CenterStart
                             ) {
                                 Text(
@@ -1270,6 +1284,20 @@ private fun BoardingChartDialog(
                                         end = Offset(size.width, y),
                                         strokeWidth = 0.7f
                                     )
+                                }
+
+                                // Перегрузка (> 3 собаки) — красноватый фон
+                                for (offset in 0 until totalDays) {
+                                    if (dogCountPerDay[offset] > 3) {
+                                        val y = offset * rowPx
+                                        val date = chartStart.plusDays(offset.toLong())
+                                        val inMonth = date.monthValue == month && date.year == year
+                                        drawRect(
+                                            color = Color(0xFFD32F2F).copy(alpha = if (inMonth) 0.13f else 0.08f),
+                                            topLeft = Offset(0f, y),
+                                            size = Size(size.width, rowPx)
+                                        )
+                                    }
                                 }
 
                                 // Текущий день — бледная подсветка
