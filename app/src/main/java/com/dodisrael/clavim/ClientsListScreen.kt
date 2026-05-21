@@ -8,6 +8,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1039,7 +1040,7 @@ private fun dogsPerDay(clients: List<ClientInfo>, month: Int, year: Int): List<I
     return counts.toList()
 }
 
-private data class DogInterval(val dogName: String, val startDay: Int, val endDay: Int)
+private data class DogInterval(val dogName: String, val actualStart: LocalDate, val actualEnd: LocalDate)
 
 private fun dogIntervalsInMonth(clients: List<ClientInfo>, month: Int, year: Int): List<DogInterval> {
     val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
@@ -1057,13 +1058,50 @@ private fun dogIntervalsInMonth(clients: List<ClientInfo>, month: Int, year: Int
                 }.toList()
                 if (dates.size < 2) continue
                 val start = dates.first(); val end = dates.last()
+                // Only dogs overlapping the selected month, but store full actual dates
                 if (end.isBefore(monthStart) || start.isAfter(monthEnd)) continue
-                val cs = if (start.isBefore(monthStart)) monthStart else start
-                val ce = if (end.isAfter(monthEnd)) monthEnd else end
-                add(DogInterval(client.dogName, cs.dayOfMonth, ce.dayOfMonth))
+                add(DogInterval(client.dogName, start, end))
             }
         }
-    }.sortedWith(compareBy({ it.startDay }, { it.endDay }))
+    }.sortedWith(compareBy({ it.actualStart }, { it.actualEnd }))
+}
+
+private fun dogsPerDayRange(clients: List<ClientInfo>, rangeStart: LocalDate, rangeEnd: LocalDate): List<Int> {
+    val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    val datePattern = Regex("""\d{2}\.\d{2}\.\d{4}""")
+    val totalDays = (rangeEnd.toEpochDay() - rangeStart.toEpochDay() + 1).toInt()
+    val counts = IntArray(totalDays)
+    for (client in clients) {
+        if (client.boardingHistory.isBlank()) continue
+        for (line in client.boardingHistory.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.isBlank()) continue
+            val dates = datePattern.findAll(trimmed).mapNotNull { m ->
+                try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+            }.toList()
+            when {
+                dates.isEmpty() -> Unit
+                dates.size == 1 -> {
+                    val d = dates[0]
+                    if (!d.isBefore(rangeStart) && !d.isAfter(rangeEnd))
+                        counts[(d.toEpochDay() - rangeStart.toEpochDay()).toInt()]++
+                }
+                else -> {
+                    val s = dates.first(); val e = dates.last()
+                    if (!e.isBefore(rangeStart) && !s.isAfter(rangeEnd)) {
+                        val cs = if (s.isBefore(rangeStart)) rangeStart else s
+                        val ce = if (e.isAfter(rangeEnd)) rangeEnd else e
+                        var d = cs
+                        while (!d.isAfter(ce)) {
+                            counts[(d.toEpochDay() - rangeStart.toEpochDay()).toInt()]++
+                            d = d.plusDays(1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return counts.toList()
 }
 
 @Composable
@@ -1073,120 +1111,160 @@ private fun BoardingChartDialog(
     year: Int,
     onDismiss: () -> Unit
 ) {
-    val daysInMonth = remember(month, year) { LocalDate.of(year, month, 1).lengthOfMonth() }
-    val counts = remember(clients, month, year) { dogsPerDay(clients, month, year) }
-    val intervals = remember(clients, month, year) { dogIntervalsInMonth(clients, month, year) }
-    val maxCount = remember(counts) { counts.maxOrNull()?.takeIf { it > 0 } ?: 1 }
+    val monthStart = remember(month, year) { LocalDate.of(year, month, 1) }
+    val monthEnd   = remember(monthStart) { monthStart.withDayOfMonth(monthStart.lengthOfMonth()) }
+    val intervals  = remember(clients, month, year) { dogIntervalsInMonth(clients, month, year) }
+
+    val chartStart = remember(intervals, monthStart) {
+        intervals.minOfOrNull { it.actualStart }?.takeIf { it.isBefore(monthStart) } ?: monthStart
+    }
+    val chartEnd = remember(intervals, monthEnd) {
+        intervals.maxOfOrNull { it.actualEnd }?.takeIf { it.isAfter(monthEnd) } ?: monthEnd
+    }
+    val totalDays = remember(chartStart, chartEnd) {
+        (chartEnd.toEpochDay() - chartStart.toEpochDay() + 1).toInt()
+    }
 
     val monthNames = listOf("Январь","Февраль","Март","Апрель","Май","Июнь",
                             "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь")
-    val dowLabels = listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
-    val dogColors = listOf(
+    val monthAbbr  = listOf("Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек")
+    val dowLabels  = listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
+    val dogColors  = listOf(
         Color(0xFF1565C0), Color(0xFF2E7D32), Color(0xFFE65100), Color(0xFF6A1B9A),
         Color(0xFF00838F), Color(0xFFC62828), Color(0xFF4527A0), Color(0xFF558B2F)
     )
 
-    val rowHeightDp = 20.dp
+    val rowHeightDp  = 20.dp
     val stripWidthDp = 18.dp
-    val chartHeight = rowHeightDp * daysInMonth
-    val density = LocalDensity.current
+    val chartHeight  = rowHeightDp * totalDays
+    val density      = LocalDensity.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("${monthNames[month - 1]} $year") },
         text = {
-            Box(modifier = Modifier
-                .heightIn(max = 520.dp)
-                .verticalScroll(rememberScrollState())
-            ) {
+            Box(modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
                 Row(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
-                    // Левая часть: подписи + столбики + цифры
-                    Column(modifier = Modifier.weight(1f)) {
-                        for (dayIdx in 0 until daysInMonth) {
-                            val day = dayIdx + 1
-                            val count = counts[dayIdx]
-                            val date = LocalDate.of(year, month, day)
+
+                    // Подписи дней — фиксированная ширина, не скроллируется
+                    Column(modifier = Modifier.width(44.dp)) {
+                        for (offset in 0 until totalDays) {
+                            val date      = chartStart.plusDays(offset.toLong())
+                            val inMonth   = date.monthValue == month && date.year == year
                             val isWeekend = date.dayOfWeek.value >= 6
-                            Row(
-                                modifier = Modifier.fillMaxWidth().height(rowHeightDp),
-                                verticalAlignment = Alignment.CenterVertically
+                            val label = if (inMonth)
+                                "%2d %s".format(date.dayOfMonth, dowLabels[date.dayOfWeek.value - 1])
+                            else
+                                "%2d %s".format(date.dayOfMonth, monthAbbr[date.monthValue - 1])
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(rowHeightDp)
+                                    .background(if (inMonth) Color.Transparent else Color(0xFFF5F5F5)),
+                                contentAlignment = Alignment.CenterStart
                             ) {
                                 Text(
-                                    "%2d %s".format(day, dowLabels[date.dayOfWeek.value - 1]),
+                                    label,
                                     fontSize = 10.sp,
-                                    color = if (isWeekend) Color(0xFFE53935) else Color(0xFF424242),
-                                    modifier = Modifier.width(40.dp),
+                                    color = when {
+                                        !inMonth  -> Color(0xFFBDBDBD)
+                                        isWeekend -> Color(0xFFE53935)
+                                        else      -> Color(0xFF424242)
+                                    },
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                                )
-                                Box(modifier = Modifier.weight(1f).fillMaxHeight().padding(vertical = 3.dp)) {
-                                    if (count > 0) Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth(count.toFloat() / maxCount)
-                                            .fillMaxHeight()
-                                            .background(
-                                                (if (isWeekend) Color(0xFFE53935) else Color(0xFF7B1FA2)).copy(alpha = 0.7f),
-                                                RoundedCornerShape(topEnd = 3.dp, bottomEnd = 3.dp)
-                                            )
-                                    )
-                                }
-                                Text(
-                                    if (count > 0) "$count" else "–",
-                                    fontSize = 10.sp,
-                                    color = if (count > 0) Color(0xFF424242) else Color(0xFFBDBDBD),
-                                    modifier = Modifier.width(18.dp),
-                                    textAlign = TextAlign.End
                                 )
                             }
                         }
                     }
 
-                    // Правая часть: вертикальные полосы собак с именами
+                    // Полосы собак — горизонтальный скролл когда их много
                     if (intervals.isNotEmpty()) {
                         Spacer(Modifier.width(4.dp))
-                        Canvas(modifier = Modifier
-                            .width(stripWidthDp * intervals.size)
-                            .fillMaxHeight()
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .horizontalScroll(rememberScrollState())
                         ) {
-                            val rowPx = with(density) { rowHeightDp.toPx() }
-                            val stripPx = with(density) { stripWidthDp.toPx() }
+                            Canvas(
+                                modifier = Modifier
+                                    .width(stripWidthDp * intervals.size)
+                                    .fillMaxHeight()
+                            ) {
+                                val rowPx   = with(density) { rowHeightDp.toPx() }
+                                val stripPx = with(density) { stripWidthDp.toPx() }
+                                val mStartOff = (monthStart.toEpochDay() - chartStart.toEpochDay()).toInt()
+                                val mEndOff   = (monthEnd.toEpochDay()   - chartStart.toEpochDay()).toInt()
 
-                            intervals.forEachIndexed { idx, interval ->
-                                val color = dogColors[idx % dogColors.size]
-                                val x = idx * stripPx
-                                val yTop = (interval.startDay - 1) * rowPx
-                                val yBot = interval.endDay * rowPx
-
-                                // Фон полосы
-                                drawRoundRect(
-                                    color = color.copy(alpha = 0.15f),
-                                    topLeft = Offset(x + 1f, yTop),
-                                    size = Size(stripPx - 2f, yBot - yTop),
-                                    cornerRadius = CornerRadius(with(density) { 4.dp.toPx() })
-                                )
-                                // Цветная левая кромка
-                                drawRect(
-                                    color = color.copy(alpha = 0.8f),
-                                    topLeft = Offset(x + 1f, yTop),
-                                    size = Size(with(density) { 3.dp.toPx() }, yBot - yTop)
-                                )
-
-                                // Имя собаки вертикально по центру интервала
-                                val cx = x + stripPx / 2f
-                                val cy = (yTop + yBot) / 2f
-                                val textSizePx = with(density) { 9.sp.toPx() }
-                                val paint = android.graphics.Paint().apply {
-                                    isAntiAlias = true
-                                    textSize = textSizePx
-                                    textAlign = android.graphics.Paint.Align.CENTER
-                                    this.color = color.copy(alpha = 0.9f).toArgb()
+                                // Сетка: фон строк + горизонтальные линии
+                                for (offset in 0 until totalDays) {
+                                    val y    = offset * rowPx
+                                    val date = chartStart.plusDays(offset.toLong())
+                                    val inMonth = date.monthValue == month && date.year == year
+                                    if (!inMonth) drawRect(
+                                        color = Color(0xFFF5F5F5),
+                                        topLeft = Offset(0f, y),
+                                        size = Size(size.width, rowPx)
+                                    )
+                                    if (offset > 0) drawLine(
+                                        color = Color(0xFFBDBDBD),
+                                        start = Offset(0f, y),
+                                        end = Offset(size.width, y),
+                                        strokeWidth = 0.7f
+                                    )
                                 }
-                                drawIntoCanvas { canvas ->
-                                    canvas.nativeCanvas.apply {
-                                        save()
-                                        clipRect(x, yTop, x + stripPx, yBot)
-                                        rotate(-90f, cx, cy)
-                                        drawText(interval.dogName, cx, cy + textSizePx * 0.35f, paint)
-                                        restore()
+
+                                // Граница месяца — более заметная линия
+                                if (mStartOff > 0)
+                                    drawLine(Color(0xFFBDBDBD), Offset(0f, mStartOff * rowPx), Offset(size.width, mStartOff * rowPx), 1f)
+                                if (mEndOff < totalDays - 1)
+                                    drawLine(Color(0xFFBDBDBD), Offset(0f, (mEndOff + 1) * rowPx), Offset(size.width, (mEndOff + 1) * rowPx), 1f)
+
+                                intervals.forEachIndexed { idx, interval ->
+                                    val color = dogColors[idx % dogColors.size]
+                                    val x     = idx * stripPx
+                                    val yTop  = (interval.actualStart.toEpochDay() - chartStart.toEpochDay()) * rowPx
+                                    val yBot  = (interval.actualEnd.toEpochDay()   - chartStart.toEpochDay() + 1) * rowPx
+
+                                    // Фон всего интервала (включая дни вне месяца) — бледный
+                                    drawRoundRect(
+                                        color = color.copy(alpha = 0.10f),
+                                        topLeft = Offset(x + 1f, yTop),
+                                        size = Size(stripPx - 2f, yBot - yTop),
+                                        cornerRadius = CornerRadius(with(density) { 4.dp.toPx() })
+                                    )
+                                    // Часть внутри текущего месяца — ярче
+                                    val inTop = maxOf(yTop, mStartOff * rowPx)
+                                    val inBot = minOf(yBot, (mEndOff + 1) * rowPx)
+                                    if (inBot > inTop) drawRect(
+                                        color = color.copy(alpha = 0.18f),
+                                        topLeft = Offset(x + 1f, inTop),
+                                        size = Size(stripPx - 2f, inBot - inTop)
+                                    )
+                                    // Цветная левая кромка
+                                    drawRect(
+                                        color = color.copy(alpha = 0.85f),
+                                        topLeft = Offset(x + 1f, yTop),
+                                        size = Size(with(density) { 3.dp.toPx() }, yBot - yTop)
+                                    )
+                                    // Имя собаки вертикально по центру полного интервала
+                                    val cx = x + stripPx / 2f
+                                    val cy = (yTop + yBot) / 2f
+                                    val textSizePx = with(density) { 9.sp.toPx() }
+                                    val paint = android.graphics.Paint().apply {
+                                        isAntiAlias = true
+                                        textSize    = textSizePx
+                                        textAlign   = android.graphics.Paint.Align.CENTER
+                                        this.color  = color.copy(alpha = 0.9f).toArgb()
+                                    }
+                                    drawIntoCanvas { canvas ->
+                                        canvas.nativeCanvas.apply {
+                                            save()
+                                            clipRect(x, yTop, x + stripPx, yBot)
+                                            rotate(-90f, cx, cy)
+                                            drawText(interval.dogName, cx, cy + textSizePx * 0.35f, paint)
+                                            restore()
+                                        }
                                     }
                                 }
                             }
