@@ -28,7 +28,9 @@
       "Bash(Select-Object Name, Mode)",
       "Bash(xargs grep -l \"boarding\\\\|передержк\")",
       "Bash(xargs grep -l -i \"foster\")",
-      "Bash(xargs grep -l \"class.*Repository\\\\|interface.*Repository\")"
+      "Bash(xargs grep -l \"class.*Repository\\\\|interface.*Repository\")",
+      "Bash(./gradlew compileDebugKotlin --stacktrace)",
+      "Bash(./gradlew compileDebugKotlin --info)"
     ]
   }
 }

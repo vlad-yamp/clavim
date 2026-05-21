@@ -4,8 +4,11 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +63,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -1029,6 +1039,33 @@ private fun dogsPerDay(clients: List<ClientInfo>, month: Int, year: Int): List<I
     return counts.toList()
 }
 
+private data class DogInterval(val dogName: String, val startDay: Int, val endDay: Int)
+
+private fun dogIntervalsInMonth(clients: List<ClientInfo>, month: Int, year: Int): List<DogInterval> {
+    val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    val monthStart = LocalDate.of(year, month, 1)
+    val monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth())
+    val datePattern = Regex("""\d{2}\.\d{2}\.\d{4}""")
+    return buildList {
+        for (client in clients) {
+            if (client.boardingHistory.isBlank()) continue
+            for (line in client.boardingHistory.lines()) {
+                val trimmed = line.trim()
+                if (trimmed.isBlank()) continue
+                val dates = datePattern.findAll(trimmed).mapNotNull { m ->
+                    try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+                }.toList()
+                if (dates.size < 2) continue
+                val start = dates.first(); val end = dates.last()
+                if (end.isBefore(monthStart) || start.isAfter(monthEnd)) continue
+                val cs = if (start.isBefore(monthStart)) monthStart else start
+                val ce = if (end.isAfter(monthEnd)) monthEnd else end
+                add(DogInterval(client.dogName, cs.dayOfMonth, ce.dayOfMonth))
+            }
+        }
+    }.sortedWith(compareBy({ it.startDay }, { it.endDay }))
+}
+
 @Composable
 private fun BoardingChartDialog(
     clients: List<ClientInfo>,
@@ -1036,71 +1073,129 @@ private fun BoardingChartDialog(
     year: Int,
     onDismiss: () -> Unit
 ) {
+    val daysInMonth = remember(month, year) { LocalDate.of(year, month, 1).lengthOfMonth() }
     val counts = remember(clients, month, year) { dogsPerDay(clients, month, year) }
+    val intervals = remember(clients, month, year) { dogIntervalsInMonth(clients, month, year) }
     val maxCount = remember(counts) { counts.maxOrNull()?.takeIf { it > 0 } ?: 1 }
+
     val monthNames = listOf("Январь","Февраль","Март","Апрель","Май","Июнь",
                             "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь")
     val dowLabels = listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
+    val dogColors = listOf(
+        Color(0xFF1565C0), Color(0xFF2E7D32), Color(0xFFE65100), Color(0xFF6A1B9A),
+        Color(0xFF00838F), Color(0xFFC62828), Color(0xFF4527A0), Color(0xFF558B2F)
+    )
+
+    val rowHeightDp = 20.dp
+    val stripWidthDp = 18.dp
+    val chartHeight = rowHeightDp * daysInMonth
+    val density = LocalDensity.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("${monthNames[month - 1]} $year") },
         text = {
-            androidx.compose.foundation.lazy.LazyColumn(
-                modifier = Modifier.heightIn(max = 500.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+            Box(modifier = Modifier
+                .heightIn(max = 520.dp)
+                .verticalScroll(rememberScrollState())
             ) {
-                items(counts.size) { idx ->
-                    val day = idx + 1
-                    val count = counts[idx]
-                    val date = LocalDate.of(year, month, day)
-                    val isWeekend = date.dayOfWeek.value >= 6
-                    val dowLabel = dowLabels[date.dayOfWeek.value - 1]
-                    val barColor = if (isWeekend) Color(0xFFE53935) else Color(0xFF7B1FA2)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "%2d %s".format(day, dowLabel),
-                            fontSize = 11.sp,
-                            color = if (isWeekend) Color(0xFFE53935) else Color(0xFF424242),
-                            modifier = Modifier.width(40.dp),
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                        )
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(16.dp)
-                        ) {
-                            if (count > 0) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth(count.toFloat() / maxCount.toFloat())
-                                        .fillMaxHeight()
-                                        .background(
-                                            barColor.copy(alpha = 0.75f),
-                                            RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)
-                                        )
+                Row(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
+                    // Левая часть: подписи + столбики + цифры
+                    Column(modifier = Modifier.weight(1f)) {
+                        for (dayIdx in 0 until daysInMonth) {
+                            val day = dayIdx + 1
+                            val count = counts[dayIdx]
+                            val date = LocalDate.of(year, month, day)
+                            val isWeekend = date.dayOfWeek.value >= 6
+                            Row(
+                                modifier = Modifier.fillMaxWidth().height(rowHeightDp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "%2d %s".format(day, dowLabels[date.dayOfWeek.value - 1]),
+                                    fontSize = 10.sp,
+                                    color = if (isWeekend) Color(0xFFE53935) else Color(0xFF424242),
+                                    modifier = Modifier.width(40.dp),
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                )
+                                Box(modifier = Modifier.weight(1f).fillMaxHeight().padding(vertical = 3.dp)) {
+                                    if (count > 0) Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(count.toFloat() / maxCount)
+                                            .fillMaxHeight()
+                                            .background(
+                                                (if (isWeekend) Color(0xFFE53935) else Color(0xFF7B1FA2)).copy(alpha = 0.7f),
+                                                RoundedCornerShape(topEnd = 3.dp, bottomEnd = 3.dp)
+                                            )
+                                    )
+                                }
+                                Text(
+                                    if (count > 0) "$count" else "–",
+                                    fontSize = 10.sp,
+                                    color = if (count > 0) Color(0xFF424242) else Color(0xFFBDBDBD),
+                                    modifier = Modifier.width(18.dp),
+                                    textAlign = TextAlign.End
                                 )
                             }
                         }
-                        Text(
-                            text = if (count > 0) "$count" else "–",
-                            fontSize = 11.sp,
-                            color = if (count > 0) Color(0xFF424242) else Color(0xFFBDBDBD),
-                            modifier = Modifier
-                                .width(22.dp)
-                                .padding(start = 4.dp),
-                            textAlign = TextAlign.End
-                        )
+                    }
+
+                    // Правая часть: вертикальные полосы собак с именами
+                    if (intervals.isNotEmpty()) {
+                        Spacer(Modifier.width(4.dp))
+                        Canvas(modifier = Modifier
+                            .width(stripWidthDp * intervals.size)
+                            .fillMaxHeight()
+                        ) {
+                            val rowPx = with(density) { rowHeightDp.toPx() }
+                            val stripPx = with(density) { stripWidthDp.toPx() }
+
+                            intervals.forEachIndexed { idx, interval ->
+                                val color = dogColors[idx % dogColors.size]
+                                val x = idx * stripPx
+                                val yTop = (interval.startDay - 1) * rowPx
+                                val yBot = interval.endDay * rowPx
+
+                                // Фон полосы
+                                drawRoundRect(
+                                    color = color.copy(alpha = 0.15f),
+                                    topLeft = Offset(x + 1f, yTop),
+                                    size = Size(stripPx - 2f, yBot - yTop),
+                                    cornerRadius = CornerRadius(with(density) { 4.dp.toPx() })
+                                )
+                                // Цветная левая кромка
+                                drawRect(
+                                    color = color.copy(alpha = 0.8f),
+                                    topLeft = Offset(x + 1f, yTop),
+                                    size = Size(with(density) { 3.dp.toPx() }, yBot - yTop)
+                                )
+
+                                // Имя собаки вертикально по центру интервала
+                                val cx = x + stripPx / 2f
+                                val cy = (yTop + yBot) / 2f
+                                val textSizePx = with(density) { 9.sp.toPx() }
+                                val paint = android.graphics.Paint().apply {
+                                    isAntiAlias = true
+                                    textSize = textSizePx
+                                    textAlign = android.graphics.Paint.Align.CENTER
+                                    this.color = color.copy(alpha = 0.9f).toArgb()
+                                }
+                                drawIntoCanvas { canvas ->
+                                    canvas.nativeCanvas.apply {
+                                        save()
+                                        clipRect(x, yTop, x + stripPx, yBot)
+                                        rotate(-90f, cx, cy)
+                                        drawText(interval.dogName, cx, cy + textSizePx * 0.35f, paint)
+                                        restore()
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Закрыть") }
-        }
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
     )
 }
 
