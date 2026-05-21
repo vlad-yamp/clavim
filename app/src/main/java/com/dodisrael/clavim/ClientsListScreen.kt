@@ -120,7 +120,8 @@ private data class ClientInfo(
 fun ClientsListScreen(
     onBack: () -> Unit,
     onRepeatBoarding: (dogName: String, clarification: String) -> Unit,
-    onDeleteBoarding: (dogName: String, clarification: String) -> Unit
+    onDeleteBoarding: (dogName: String, clarification: String) -> Unit,
+    initialMonthFilter: Pair<Int, Int>? = null
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("clavim_prefs", Context.MODE_PRIVATE) }
@@ -138,7 +139,7 @@ fun ClientsListScreen(
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showHistoryFor by remember { mutableStateOf<ClientInfo?>(null) }
     // Pair(month 1-12, year)
-    var monthFilter by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var monthFilter by remember { mutableStateOf(initialMonthFilter) }
     var showMonthPicker by remember { mutableStateOf(false) }
     var showBoardingChart by remember { mutableStateOf(false) }
     val listState = rememberLazyListState(

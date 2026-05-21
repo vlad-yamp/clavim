@@ -163,10 +163,45 @@ private data class NewDogBookingPending(
     val presetOwner: String = ""
 )
 
+private fun detectMonthFilter(question: String): Pair<Int, Int>? {
+    val q = question.lowercase().trim()
+    // Если есть глаголы действия — это запись/удаление, не показ списка
+    val actionKeywords = listOf("запис", "запиш", "добавь", "добавить", "удали", "удалить", "убери", "убрать", "зарегистрируй", "отмени", "внеси", "поставь")
+    if (actionKeywords.any { q.contains(it) }) return null
+    val boardingKeywords = listOf("собак", "передержк", "у нас", "список", "покажи", "какие", "кто в")
+    if (boardingKeywords.none { q.contains(it) }) return null
+    val monthPatterns = listOf(
+        Regex("\\bянвар") to 1,
+        Regex("\\bфевра") to 2,
+        Regex("\\bмарт") to 3,
+        Regex("\\bапрел") to 4,
+        Regex("\\bмай\\b|\\bмае\\b|\\bмая\\b") to 5,
+        Regex("\\bиюн") to 6,
+        Regex("\\bиюл") to 7,
+        Regex("\\bавгуст") to 8,
+        Regex("\\bсентябр") to 9,
+        Regex("\\bоктябр") to 10,
+        Regex("\\bноябр") to 11,
+        Regex("\\bдекабр") to 12,
+    )
+    val month = monthPatterns.firstOrNull { (r, _) -> r.containsMatchIn(q) }?.second ?: return null
+    val yearMatch = Regex("\\b(202\\d)\\b").find(q)
+    val year = if (yearMatch != null) {
+        yearMatch.value.toInt()
+    } else {
+        val cal = Calendar.getInstance()
+        val curMonth = cal.get(Calendar.MONTH) + 1
+        val curYear = cal.get(Calendar.YEAR)
+        if (month < curMonth) curYear + 1 else curYear
+    }
+    return month to year
+}
+
 @Composable
 fun BoardingAssistantScreen(
     onBack: () -> Unit,
     onTelegramFosteringClick: () -> Unit = {},
+    onClientMonthClick: (month: Int, year: Int) -> Unit = { _, _ -> },
     initialFormAction: String? = null,
     presetDogName: String = "",
     presetClarification: String = "",
@@ -313,8 +348,17 @@ fun BoardingAssistantScreen(
     }
 
     fun askQuestion() {
-        if (apiKey.isBlank()) { errorText = "API ключ не задан. Перейдите в Настройки."; return }
         if (question.isBlank()) return
+
+        // Локальная детекция: вопрос о собаках в конкретном месяце → открываем список клиентов
+        val monthFilter = detectMonthFilter(question)
+        if (monthFilter != null) {
+            onClientMonthClick(monthFilter.first, monthFilter.second)
+            question = ""
+            return
+        }
+
+        if (apiKey.isBlank()) { errorText = "API ключ не задан. Перейдите в Настройки."; return }
 
         // Disambiguation reply for pending booking
         val booking = pendingBooking

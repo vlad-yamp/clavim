@@ -65,6 +65,8 @@ fun AppContent() {
     var boardingPresetDogName by remember { mutableStateOf("") }
     var boardingPresetClarification by remember { mutableStateOf("") }
     var boardingOnlyMode by remember { mutableStateOf(false) }
+    var clientsInitialMonthFilter by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var clientsReturnScreen by remember { mutableStateOf(Screen.FOSTERING_MENU) }
 
     fun openWebView(url: String, title: String, returnTo: Screen) {
         webViewUrl = url
@@ -81,7 +83,7 @@ fun AppContent() {
             Screen.WEB_VIEW -> webViewReturnScreen
             Screen.SETTINGS -> Screen.MAIN
             Screen.FOSTERING_MENU -> Screen.MAIN
-            Screen.FOSTERING_CLIENTS -> Screen.FOSTERING_MENU
+            Screen.FOSTERING_CLIENTS -> { clientsInitialMonthFilter = null; clientsReturnScreen }
             Screen.BOARDING_ASSISTANT -> {
                 boardingInitialAction = null
                 boardingPresetDogName = ""
@@ -172,10 +174,11 @@ fun AppContent() {
                 boardingInitialAction = "delete"; boardingReturnScreen = Screen.FOSTERING_MENU
                 screen = Screen.BOARDING_ASSISTANT
             },
-            onClientsClick = { screen = Screen.FOSTERING_CLIENTS }
+            onClientsClick = { clientsInitialMonthFilter = null; clientsReturnScreen = Screen.FOSTERING_MENU; screen = Screen.FOSTERING_CLIENTS }
         )
         Screen.FOSTERING_CLIENTS   -> ClientsListScreen(
-            onBack = { screen = Screen.FOSTERING_MENU },
+            initialMonthFilter = clientsInitialMonthFilter,
+            onBack = { clientsInitialMonthFilter = null; screen = clientsReturnScreen },
             onRepeatBoarding = { dogName, clarification ->
                 boardingPresetDogName = dogName
                 boardingPresetClarification = clarification
@@ -202,6 +205,11 @@ fun AppContent() {
                 screen = boardingReturnScreen
             },
             onTelegramFosteringClick = { screen = Screen.TELEGRAM_FOSTERING },
+            onClientMonthClick = { m, y ->
+                clientsInitialMonthFilter = m to y
+                clientsReturnScreen = Screen.BOARDING_ASSISTANT
+                screen = Screen.FOSTERING_CLIENTS
+            },
             initialFormAction = boardingInitialAction,
             presetDogName = boardingPresetDogName,
             presetClarification = boardingPresetClarification,
