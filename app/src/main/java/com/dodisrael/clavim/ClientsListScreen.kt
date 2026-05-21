@@ -276,6 +276,13 @@ fun ClientsListScreen(
         }
     }
 
+    val totalEarnings = remember(displayItems, monthFilter) {
+        val f = monthFilter ?: return@remember 0
+        displayItems.sumOf { (client, interval) ->
+            interval?.let { intervalEarnings(it, f.first, f.second, client.dogName) } ?: 0
+        }
+    }
+
     if (showClearCacheDialog) {
         AlertDialog(
             onDismissRequest = { showClearCacheDialog = false },
@@ -439,6 +446,15 @@ fun ClientsListScreen(
                                 .size(14.dp)
                                 .clickable { monthFilter = null }
                         )
+                        if (totalEarnings > 0) {
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "~${String.format(java.util.Locale.US, "%,d", totalEarnings)} ₪",
+                                fontSize = 12.sp,
+                                color = Color(0xFF2E7D32),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
                     Text(
                         "${filteredClients.size} собак  ·  $dogDays соб-дн  ·  ср. ${"%.1f".format(avgPerDay)}/дн",
@@ -490,10 +506,14 @@ fun ClientsListScreen(
             ) {
                 items(displayItems) { (client, interval) ->
                     val photoUrl = photoCache[clientPhotoKey(client)]
+                    val earnings = monthFilter?.let { (m, y) ->
+                        interval?.let { intervalEarnings(it, m, y, client.dogName) }
+                    }
                     ClientCard(
                         client = client,
                         photoUrl = photoUrl,
                         boardingInterval = interval,
+                        earnings = earnings,
                         onCall = { callPhone(context, client.phone) },
                         onWhatsApp = { openWhatsApp(context, client.phone) },
                         onRepeatBoarding = {
@@ -517,6 +537,7 @@ private fun ClientCard(
     client: ClientInfo,
     photoUrl: String?,
     boardingInterval: String? = null,
+    earnings: Int? = null,
     onCall: () -> Unit,
     onWhatsApp: () -> Unit,
     onRepeatBoarding: () -> Unit,
@@ -570,7 +591,9 @@ private fun ClientCard(
 
                 if (client.breed.isNotBlank()) {
                     Text(
-                        text = client.breed,
+                        text = if (earnings != null)
+                            "${client.breed}  (~${String.format(java.util.Locale.US, "%,d", earnings)} ₪)"
+                        else client.breed,
                         fontSize = 12.sp,
                         color = Color(0xFF757575),
                         maxLines = 1,
@@ -1347,6 +1370,34 @@ private fun totalDogDaysInMonth(clients: List<ClientInfo>, month: Int, year: Int
         }
         days
     }
+}
+
+private fun countDogs(dogName: String): Int {
+    if (dogName.isBlank()) return 1
+    val parts = dogName.split(Regex("""\s+и\s+|\+|&|,"""))
+        .map { it.trim() }.filter { it.isNotBlank() }
+    return maxOf(1, parts.size)
+}
+
+// Возвращает заработок если дата окончания попадает в указанный месяц, иначе null.
+// Тариф: 1 собака — 120 ₪/день, 2 — 180 ₪/день, 3+ — 340 ₪/день.
+private fun intervalEarnings(intervalStr: String, month: Int, year: Int, dogName: String = ""): Int? {
+    val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    val datePattern = Regex("""\d{2}\.\d{2}\.\d{4}""")
+    val dates = datePattern.findAll(intervalStr).mapNotNull { m ->
+        try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+    }.toList()
+    if (dates.size < 2) return null
+    val end = dates.last()
+    if (end.monthValue != month || end.year != year) return null
+    val days = Regex("""\((\d+)""").find(intervalStr)?.groupValues?.get(1)?.toIntOrNull()
+        ?: (end.toEpochDay() - dates.first().toEpochDay() + 1).toInt()
+    val rate = when (countDogs(dogName)) {
+        1 -> 120
+        2 -> 180
+        else -> 340
+    }
+    return days * rate
 }
 
 private fun allBoardingIntervalsInMonth(client: ClientInfo, month: Int, year: Int): List<String> {
