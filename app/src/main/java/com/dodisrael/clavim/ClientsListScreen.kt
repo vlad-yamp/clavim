@@ -249,6 +249,33 @@ fun ClientsListScreen(
         totalDogDaysInMonth(filteredClients, f.first, f.second)
     }
 
+    // При активном фильтре разворачиваем клиентов: одна запись на каждый интервал в месяце,
+    // отсортированные по дате начала. Без фильтра — тот же порядок что в filteredClients.
+    val displayItems: List<Pair<ClientInfo, String?>> = remember(filteredClients, monthFilter) {
+        val f = monthFilter
+        if (f == null) {
+            filteredClients.map { it to (null as String?) }
+        } else {
+            val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+            val datePattern = Regex("""\d{2}\.\d{2}\.\d{4}""")
+            filteredClients
+                .flatMap { client ->
+                    val intervals = allBoardingIntervalsInMonth(client, f.first, f.second)
+                    buildList<Pair<ClientInfo, String?>> {
+                        if (intervals.isEmpty()) add(client to null)
+                        else intervals.forEach { add(client to it) }
+                    }
+                }
+                .sortedBy { (_, interval) ->
+                    interval?.let { s ->
+                        datePattern.find(s)?.let { m ->
+                            try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+                        }
+                    }
+                }
+        }
+    }
+
     if (showClearCacheDialog) {
         AlertDialog(
             onDismissRequest = { showClearCacheDialog = false },
@@ -444,7 +471,7 @@ fun ClientsListScreen(
             errorMessage.isNotBlank() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(errorMessage, color = Color(0xFFD32F2F), modifier = Modifier.padding(16.dp))
             }
-            filteredClients.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            displayItems.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     when {
                         searchQuery.isNotBlank() || monthFilter != null -> "Ничего не найдено"
@@ -461,14 +488,12 @@ fun ClientsListScreen(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(filteredClients) { client ->
+                items(displayItems) { (client, interval) ->
                     val photoUrl = photoCache[clientPhotoKey(client)]
                     ClientCard(
                         client = client,
                         photoUrl = photoUrl,
-                        boardingInterval = monthFilter?.let { (m, y) ->
-                            findBoardingIntervalForMonth(client, m, y)
-                        },
+                        boardingInterval = interval,
                         onCall = { callPhone(context, client.phone) },
                         onWhatsApp = { openWhatsApp(context, client.phone) },
                         onRepeatBoarding = {
@@ -557,7 +582,7 @@ private fun ClientCard(
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = boardingInterval,
-                        fontSize = 13.sp,
+                        fontSize = 11.sp,
                         color = Color(0xFF2E7D32),
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
@@ -1313,6 +1338,35 @@ private fun totalDogDaysInMonth(clients: List<ClientInfo>, month: Int, year: Int
     }
 }
 
+private fun allBoardingIntervalsInMonth(client: ClientInfo, month: Int, year: Int): List<String> {
+    if (client.boardingHistory.isBlank()) return emptyList()
+    val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    val monthStart = LocalDate.of(year, month, 1)
+    val monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth())
+    val datePattern = Regex("""\d{2}\.\d{2}\.\d{4}""")
+    return buildList {
+        for (line in client.boardingHistory.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.isBlank()) continue
+            val dates = datePattern.findAll(trimmed).mapNotNull { m ->
+                try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+            }.toList()
+            val overlaps = when (dates.size) {
+                0 -> false
+                1 -> dates[0].let { it.monthValue == month && it.year == year }
+                else -> !dates.last().isBefore(monthStart) && !dates.first().isAfter(monthEnd)
+            }
+            if (overlaps) {
+                val dateStrs = datePattern.findAll(trimmed).map { it.value }.toList()
+                val parens = Regex("""\(\d+[^)]*\)""").find(trimmed)?.value
+                val base = if (dateStrs.size >= 2) "${dateStrs.first()} — ${dateStrs.last()}"
+                           else dateStrs.firstOrNull() ?: trimmed
+                add(if (parens != null) "$base $parens" else base)
+            }
+        }
+    }
+}
+
 private fun findBoardingIntervalForMonth(client: ClientInfo, month: Int, year: Int): String? {
     if (client.boardingHistory.isBlank()) return null
     val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
@@ -1332,7 +1386,33 @@ private fun findBoardingIntervalForMonth(client: ClientInfo, month: Int, year: I
         }
     }?.trim() ?: return null
     val dates = datePattern.findAll(line).map { it.value }.toList()
-    return if (dates.size >= 2) "${dates.first()} — ${dates.last()}" else dates.firstOrNull() ?: line
+    val parens = Regex("""\(\d+[^)]*\)""").find(line)?.value
+    return if (dates.size >= 2) {
+        val base = "${dates.first()} — ${dates.last()}"
+        if (parens != null) "$base $parens" else base
+    } else dates.firstOrNull() ?: line
+}
+
+private fun boardingStartInMonth(client: ClientInfo, month: Int, year: Int): LocalDate? {
+    if (client.boardingHistory.isBlank()) return null
+    val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    val monthStart = LocalDate.of(year, month, 1)
+    val monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth())
+    val datePattern = Regex("""\d{2}\.\d{2}\.\d{4}""")
+    for (line in client.boardingHistory.lines()) {
+        val trimmed = line.trim()
+        if (trimmed.isBlank()) continue
+        val dates = datePattern.findAll(trimmed).mapNotNull { m ->
+            try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+        }.toList()
+        val overlaps = when (dates.size) {
+            0 -> false
+            1 -> dates[0].let { it.monthValue == month && it.year == year }
+            else -> !dates.last().isBefore(monthStart) && !dates.first().isAfter(monthEnd)
+        }
+        if (overlaps) return dates.firstOrNull()
+    }
+    return null
 }
 
 private fun clientHasBoardingInMonth(client: ClientInfo, month: Int, year: Int): Boolean {
