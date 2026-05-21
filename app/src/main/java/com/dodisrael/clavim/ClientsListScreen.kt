@@ -1149,6 +1149,7 @@ private fun BoardingChartDialog(
     val totalDays = remember(chartStart, chartEnd) {
         (chartEnd.toEpochDay() - chartStart.toEpochDay() + 1).toInt()
     }
+    val today = remember { LocalDate.now() }
 
     val monthNames = listOf("Январь","Февраль","Март","Апрель","Май","Июнь",
                             "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь")
@@ -1236,6 +1237,16 @@ private fun BoardingChartDialog(
                                         start = Offset(0f, y),
                                         end = Offset(size.width, y),
                                         strokeWidth = 0.7f
+                                    )
+                                }
+
+                                // Текущий день — бледная подсветка
+                                val todayOffset = (today.toEpochDay() - chartStart.toEpochDay()).toInt()
+                                if (todayOffset in 0 until totalDays) {
+                                    drawRect(
+                                        color = Color(0xFFFFB300).copy(alpha = 0.2f),
+                                        topLeft = Offset(0f, todayOffset * rowPx),
+                                        size = Size(size.width, rowPx)
                                     )
                                 }
 
