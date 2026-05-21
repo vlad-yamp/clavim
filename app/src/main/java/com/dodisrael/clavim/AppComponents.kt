@@ -61,7 +61,8 @@ fun AppHeader(
     subtitle: String,
     showBack: Boolean,
     onBack: () -> Unit = {},
-    onSettingsClick: (() -> Unit)? = null
+    onSettingsClick: (() -> Unit)? = null,
+    compact: Boolean = false
 ) {
     Box(
         modifier = Modifier
@@ -71,7 +72,7 @@ fun AppHeader(
                 shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
             )
             .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(bottom = if (showBack) 12.dp else 24.dp)
+            .padding(bottom = if (showBack) (if (compact) 4.dp else 12.dp) else 24.dp)
     ) {
         if (showBack) {
             IconButton(
@@ -114,23 +115,25 @@ fun AppHeader(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             } else {
-                Spacer(modifier = Modifier.height(44.dp))
+                Spacer(modifier = Modifier.height(if (compact) 4.dp else 44.dp))
                 Text(
                     text = title,
                     color = Color.White,
-                    fontSize = 20.sp,
+                    fontSize = if (compact) 17.sp else 20.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
             }
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                color = Color.White.copy(alpha = 0.85f),
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 24.dp)
-            )
+            if (!compact) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+            }
         }
     }
 }

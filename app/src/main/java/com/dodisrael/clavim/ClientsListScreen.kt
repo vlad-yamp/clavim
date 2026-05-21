@@ -333,7 +333,7 @@ fun ClientsListScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        AppHeader(title = "Клиенты", subtitle = "Список клиентов", showBack = true, onBack = onBack)
+        AppHeader(title = "Клиенты", subtitle = "Список клиентов", showBack = true, onBack = onBack, compact = true)
 
         if (!isLoading) {
             val progress = if (photosToLoad == 0) 1f else photosLoaded.toFloat() / photosToLoad.toFloat()
@@ -366,41 +366,40 @@ fun ClientsListScreen(
             }
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                label = { Text("Поиск") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = if (searchQuery.isNotBlank()) {
-                    { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Clear, "Очистить") } }
-                } else null,
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp)
-            )
-            Spacer(Modifier.width(6.dp))
-            IconButton(
-                onClick = { showMonthPicker = true },
+        if (monthFilter == null) {
+            Row(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        if (monthFilter != null) Color(0xFF7B1FA2).copy(alpha = 0.15f)
-                        else Color.Transparent
-                    )
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Default.DateRange,
-                    contentDescription = "Фильтр по месяцу",
-                    tint = if (monthFilter != null) Color(0xFF7B1FA2) else Color(0xFF757575),
-                    modifier = Modifier.size(24.dp)
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Поиск") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = if (searchQuery.isNotBlank()) {
+                        { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Clear, "Очистить") } }
+                    } else null,
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
                 )
+                Spacer(Modifier.width(6.dp))
+                IconButton(
+                    onClick = { showMonthPicker = true },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Transparent)
+                ) {
+                    Icon(
+                        Icons.Default.DateRange,
+                        contentDescription = "Фильтр по месяцу",
+                        tint = Color(0xFF757575),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
         }
 
@@ -420,18 +419,12 @@ fun ClientsListScreen(
             ) {
                 Column(
                     modifier = Modifier
+                        .weight(1f)
                         .clip(RoundedCornerShape(12.dp))
                         .background(Color(0xFF7B1FA2).copy(alpha = 0.1f))
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.DateRange,
-                            contentDescription = null,
-                            tint = Color(0xFF7B1FA2),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
                         Text(
                             "$monthName $y",
                             fontSize = 13.sp,
@@ -465,16 +458,31 @@ fun ClientsListScreen(
                 }
                 Spacer(Modifier.width(8.dp))
                 IconButton(
+                    onClick = { showMonthPicker = true },
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF7B1FA2).copy(alpha = 0.18f))
+                ) {
+                    Icon(
+                        Icons.Default.DateRange,
+                        contentDescription = "Сменить месяц",
+                        tint = Color(0xFF7B1FA2),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+                IconButton(
                     onClick = { showBoardingChart = true },
                     modifier = Modifier
                         .size(40.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF7B1FA2).copy(alpha = 0.1f))
+                        .background(Color(0xFF00897B).copy(alpha = 0.18f))
                 ) {
                     Icon(
                         Icons.Default.BarChart,
                         contentDescription = "График",
-                        tint = Color(0xFF7B1FA2),
+                        tint = Color(0xFF00897B),
                         modifier = Modifier.size(22.dp)
                     )
                 }
