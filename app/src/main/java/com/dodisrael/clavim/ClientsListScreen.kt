@@ -34,8 +34,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -63,6 +67,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -121,6 +126,10 @@ fun ClientsListScreen(
     var photosLoaded by remember { mutableStateOf(0) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showHistoryFor by remember { mutableStateOf<ClientInfo?>(null) }
+    // Pair(month 1-12, year)
+    var monthFilter by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var showMonthPicker by remember { mutableStateOf(false) }
+    var showBoardingChart by remember { mutableStateOf(false) }
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = prefs.getInt("clients_scroll_index", 0),
         initialFirstVisibleItemScrollOffset = prefs.getInt("clients_scroll_offset", 0)
@@ -143,7 +152,7 @@ fun ClientsListScreen(
             val googleApiKey = prefs.getString("google_api_key", "") ?: ""
             val (csv, notes) = withContext(Dispatchers.IO) {
                 val csvJob = async {
-                    val conn = URL(CLIENTS_SHEET_CSV).openConnection() as HttpURLConnection
+                    val conn = URL("$CLIENTS_SHEET_CSV&t=${System.currentTimeMillis()}").openConnection() as HttpURLConnection
                     conn.connectTimeout = 10_000
                     conn.readTimeout = 10_000
                     conn.instanceFollowRedirects = true
@@ -207,14 +216,26 @@ fun ClientsListScreen(
         }
     }
 
-    val filteredClients = remember(clients, searchQuery) {
-        if (searchQuery.isBlank()) clients
-        else clients.filter { c ->
-            c.ownerName.contains(searchQuery, ignoreCase = true) ||
-            c.dogName.contains(searchQuery, ignoreCase = true) ||
-            c.breed.contains(searchQuery, ignoreCase = true) ||
-            c.phone.contains(searchQuery)
-        }
+    val filteredClients = remember(clients, searchQuery, monthFilter) {
+        clients
+            .let { list ->
+                if (searchQuery.isBlank()) list
+                else list.filter { c ->
+                    c.ownerName.contains(searchQuery, ignoreCase = true) ||
+                    c.dogName.contains(searchQuery, ignoreCase = true) ||
+                    c.breed.contains(searchQuery, ignoreCase = true) ||
+                    c.phone.contains(searchQuery)
+                }
+            }
+            .let { list ->
+                val f = monthFilter ?: return@let list
+                list.filter { clientHasBoardingInMonth(it, f.first, f.second) }
+            }
+    }
+
+    val dogDays = remember(filteredClients, monthFilter) {
+        val f = monthFilter ?: return@remember 0
+        totalDogDaysInMonth(filteredClients, f.first, f.second)
     }
 
     if (showClearCacheDialog) {
@@ -238,6 +259,27 @@ fun ClientsListScreen(
 
     showHistoryFor?.let { client ->
         BoardingHistoryDialog(client = client, onDismiss = { showHistoryFor = null })
+    }
+
+    if (showBoardingChart) {
+        monthFilter?.let { (m, y) ->
+            BoardingChartDialog(
+                clients = filteredClients,
+                month = m,
+                year = y,
+                onDismiss = { showBoardingChart = false }
+            )
+        }
+    }
+
+    if (showMonthPicker) {
+        val now = remember { LocalDate.now() }
+        MonthPickerDialog(
+            initialMonth = monthFilter?.first ?: now.monthValue,
+            initialYear = monthFilter?.second ?: now.year,
+            onConfirm = { m, y -> monthFilter = m to y; showMonthPicker = false },
+            onDismiss = { showMonthPicker = false }
+        )
     }
 
     fullScreenPhotoUrl?.let { url ->
@@ -278,20 +320,111 @@ fun ClientsListScreen(
             }
         }
 
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            label = { Text("Поиск") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            trailingIcon = if (searchQuery.isNotBlank()) {
-                { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Clear, "Очистить") } }
-            } else null,
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp)
-        )
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                label = { Text("Поиск") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = if (searchQuery.isNotBlank()) {
+                    { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Clear, "Очистить") } }
+                } else null,
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            IconButton(
+                onClick = { showMonthPicker = true },
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        if (monthFilter != null) Color(0xFF7B1FA2).copy(alpha = 0.15f)
+                        else Color.Transparent
+                    )
+            ) {
+                Icon(
+                    Icons.Default.DateRange,
+                    contentDescription = "Фильтр по месяцу",
+                    tint = if (monthFilter != null) Color(0xFF7B1FA2) else Color(0xFF757575),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+
+        if (monthFilter != null) {
+            val (m, y) = monthFilter!!
+            val monthName = listOf(
+                "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+                "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+            )[m - 1]
+            val daysInMonth = LocalDate.of(y, m, 1).lengthOfMonth()
+            val avgPerDay = if (daysInMonth > 0) dogDays.toFloat() / daysInMonth else 0f
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF7B1FA2).copy(alpha = 0.1f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.DateRange,
+                            contentDescription = null,
+                            tint = Color(0xFF7B1FA2),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "$monthName $y",
+                            fontSize = 13.sp,
+                            color = Color(0xFF7B1FA2),
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            Icons.Default.Clear,
+                            contentDescription = "Сбросить фильтр",
+                            tint = Color(0xFF7B1FA2),
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clickable { monthFilter = null }
+                        )
+                    }
+                    Text(
+                        "${filteredClients.size} собак  ·  $dogDays соб-дн  ·  ср. ${"%.1f".format(avgPerDay)}/дн",
+                        fontSize = 11.sp,
+                        color = Color(0xFF7B1FA2).copy(alpha = 0.75f)
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = { showBoardingChart = true },
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF7B1FA2).copy(alpha = 0.1f))
+                ) {
+                    Icon(
+                        Icons.Default.BarChart,
+                        contentDescription = "График",
+                        tint = Color(0xFF7B1FA2),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
 
         when {
             isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -302,7 +435,10 @@ fun ClientsListScreen(
             }
             filteredClients.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    if (searchQuery.isBlank()) "Список пуст" else "Ничего не найдено",
+                    when {
+                        searchQuery.isNotBlank() || monthFilter != null -> "Ничего не найдено"
+                        else -> "Список пуст"
+                    },
                     color = Color.Gray, fontSize = 16.sp
                 )
             }
@@ -319,6 +455,9 @@ fun ClientsListScreen(
                     ClientCard(
                         client = client,
                         photoUrl = photoUrl,
+                        boardingInterval = monthFilter?.let { (m, y) ->
+                            findBoardingIntervalForMonth(client, m, y)
+                        },
                         onCall = { callPhone(context, client.phone) },
                         onWhatsApp = { openWhatsApp(context, client.phone) },
                         onRepeatBoarding = {
@@ -341,6 +480,7 @@ fun ClientsListScreen(
 private fun ClientCard(
     client: ClientInfo,
     photoUrl: String?,
+    boardingInterval: String? = null,
     onCall: () -> Unit,
     onWhatsApp: () -> Unit,
     onRepeatBoarding: () -> Unit,
@@ -402,7 +542,17 @@ private fun ClientCard(
                     )
                 }
 
-                if (client.phone.isNotBlank()) {
+                if (boardingInterval != null) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = boardingInterval,
+                        fontSize = 13.sp,
+                        color = Color(0xFF2E7D32),
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                } else if (client.phone.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = client.phone,
@@ -523,7 +673,9 @@ private fun parseClientsFromCsv(csv: String, notes: Map<String, String> = emptyM
             dogName = dogName,
             lastBoarding = cols.getOrNull(7)?.trim() ?: "",
             lastBoardingMonth = cols.getOrNull(4)?.trim() ?: "",
-            boardingHistory = notes["${ownerName.lowercase()}|${dogName.lowercase()}"] ?: ""
+            boardingHistory = notes["${ownerName.lowercase()}|${dogName.lowercase()}|${cols.getOrNull(1)?.trim() ?: ""}"]
+                ?: notes["${ownerName.lowercase()}|${dogName.lowercase()}"]
+                ?: ""
         )
     }
     // Per group (ownerName + dogName + breed): if phones differ and at least one is a valid
@@ -545,8 +697,9 @@ private suspend fun fetchSheetNotes(apiKey: String): Map<String, String> = withC
     if (apiKey.isBlank()) return@withContext emptyMap()
     try {
         // Step 1: resolve sheet name from GID (ranges param requires sheet title, not GID)
+        val ts = System.currentTimeMillis()
         val metaConn = URL(
-            "https://sheets.googleapis.com/v4/spreadsheets/$SHEET_ID?fields=sheets%2Fproperties&key=$apiKey"
+            "https://sheets.googleapis.com/v4/spreadsheets/$SHEET_ID?fields=sheets%2Fproperties&key=$apiKey&t=$ts"
         ).openConnection() as HttpURLConnection
         metaConn.connectTimeout = 10_000
         metaConn.readTimeout = 10_000
@@ -566,7 +719,7 @@ private suspend fun fetchSheetNotes(apiKey: String): Map<String, String> = withC
         val dataConn = URL(
             "https://sheets.googleapis.com/v4/spreadsheets/$SHEET_ID" +
             "?includeGridData=true&ranges=$range" +
-            "&fields=sheets%2Fdata%2FrowData%2Fvalues(formattedValue,note)&key=$apiKey"
+            "&fields=sheets%2Fdata%2FrowData%2Fvalues(formattedValue,note)&key=$apiKey&t=$ts"
         ).openConnection() as HttpURLConnection
         dataConn.connectTimeout = 15_000
         dataConn.readTimeout = 15_000
@@ -575,16 +728,19 @@ private suspend fun fetchSheetNotes(apiKey: String): Map<String, String> = withC
             .getJSONArray("data").getJSONObject(0)
             .optJSONArray("rowData") ?: return@withContext emptyMap()
 
-        // Build key "ownerName|dogName" → note. Skip header (i=0).
+        // Keys: "owner|dog|phone" (specific) and "owner|dog" (fallback).
+        // Phone disambiguates duplicate rows with same owner+dog but different phones.
         buildMap {
             for (i in 1 until rowData.length()) {
                 val cells = rowData.getJSONObject(i).optJSONArray("values") ?: continue
                 val owner = cells.optJSONObject(0)?.optString("formattedValue", "")?.trim() ?: ""
+                val phone = cells.optJSONObject(1)?.optString("formattedValue", "")?.trim() ?: ""
                 val dog   = cells.optJSONObject(3)?.optString("formattedValue", "")?.trim() ?: ""
                 val note  = cells.optJSONObject(7)?.optString("note", "").orEmpty()
                 if (owner.isNotBlank() && dog.isNotBlank() && note.isNotBlank()) {
-                    val key = "${owner.lowercase()}|${dog.lowercase()}"
-                    putIfAbsent(key, note)  // keep first occurrence per (owner, dog) pair
+                    if (phone.isNotBlank())
+                        putIfAbsent("${owner.lowercase()}|${dog.lowercase()}|$phone", note)
+                    putIfAbsent("${owner.lowercase()}|${dog.lowercase()}", note)
                 }
             }
         }
@@ -753,6 +909,278 @@ private fun callPhone(context: Context, phone: String) {
     try {
         context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$digits")))
     } catch (_: ActivityNotFoundException) {}
+}
+
+@Composable
+private fun MonthPickerDialog(
+    initialMonth: Int,
+    initialYear: Int,
+    onConfirm: (month: Int, year: Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedMonth by remember { mutableStateOf(initialMonth) }
+    var selectedYear by remember { mutableStateOf(initialYear) }
+    val monthNames = listOf("Янв", "Фев", "Мар", "Апр", "Май", "Июн",
+                            "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек")
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Фильтр по месяцу") },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    IconButton(onClick = { selectedYear-- }) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Предыдущий год", tint = Color(0xFF7B1FA2))
+                    }
+                    Text(
+                        "$selectedYear",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.width(72.dp)
+                    )
+                    IconButton(onClick = { selectedYear++ }) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Следующий год", tint = Color(0xFF7B1FA2))
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                for (row in 0 until 4) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        for (col in 0 until 3) {
+                            val monthNum = row * 3 + col + 1
+                            val isSelected = monthNum == selectedMonth
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (isSelected) Color(0xFF7B1FA2) else Color(0xFFF3E5F5)
+                                    )
+                                    .clickable { selectedMonth = monthNum }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    monthNames[monthNum - 1],
+                                    fontSize = 13.sp,
+                                    color = if (isSelected) Color.White else Color(0xFF7B1FA2),
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                    if (row < 3) Spacer(Modifier.height(4.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selectedMonth, selectedYear) }) { Text("Применить") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        }
+    )
+}
+
+private fun dogsPerDay(clients: List<ClientInfo>, month: Int, year: Int): List<Int> {
+    val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    val monthStart = LocalDate.of(year, month, 1)
+    val daysInMonth = monthStart.lengthOfMonth()
+    val monthEnd = monthStart.withDayOfMonth(daysInMonth)
+    val datePattern = Regex("""\d{2}\.\d{2}\.\d{4}""")
+    val counts = IntArray(daysInMonth)
+    for (client in clients) {
+        if (client.boardingHistory.isBlank()) continue
+        for (line in client.boardingHistory.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.isBlank()) continue
+            val dates = datePattern.findAll(trimmed).mapNotNull { m ->
+                try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+            }.toList()
+            when {
+                dates.isEmpty() -> Unit
+                dates.size == 1 -> {
+                    val d = dates[0]
+                    if (d.monthValue == month && d.year == year) counts[d.dayOfMonth - 1]++
+                }
+                else -> {
+                    val start = dates.first()
+                    val end = dates.last()
+                    if (!end.isBefore(monthStart) && !start.isAfter(monthEnd)) {
+                        val clippedStart = if (start.isBefore(monthStart)) monthStart else start
+                        val clippedEnd = if (end.isAfter(monthEnd)) monthEnd else end
+                        var d = clippedStart
+                        while (!d.isAfter(clippedEnd)) {
+                            counts[d.dayOfMonth - 1]++
+                            d = d.plusDays(1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return counts.toList()
+}
+
+@Composable
+private fun BoardingChartDialog(
+    clients: List<ClientInfo>,
+    month: Int,
+    year: Int,
+    onDismiss: () -> Unit
+) {
+    val counts = remember(clients, month, year) { dogsPerDay(clients, month, year) }
+    val maxCount = remember(counts) { counts.maxOrNull()?.takeIf { it > 0 } ?: 1 }
+    val monthNames = listOf("Январь","Февраль","Март","Апрель","Май","Июнь",
+                            "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь")
+    val dowLabels = listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${monthNames[month - 1]} $year") },
+        text = {
+            androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier.heightIn(max = 500.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                items(counts.size) { idx ->
+                    val day = idx + 1
+                    val count = counts[idx]
+                    val date = LocalDate.of(year, month, day)
+                    val isWeekend = date.dayOfWeek.value >= 6
+                    val dowLabel = dowLabels[date.dayOfWeek.value - 1]
+                    val barColor = if (isWeekend) Color(0xFFE53935) else Color(0xFF7B1FA2)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "%2d %s".format(day, dowLabel),
+                            fontSize = 11.sp,
+                            color = if (isWeekend) Color(0xFFE53935) else Color(0xFF424242),
+                            modifier = Modifier.width(40.dp),
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(16.dp)
+                        ) {
+                            if (count > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(count.toFloat() / maxCount.toFloat())
+                                        .fillMaxHeight()
+                                        .background(
+                                            barColor.copy(alpha = 0.75f),
+                                            RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)
+                                        )
+                                )
+                            }
+                        }
+                        Text(
+                            text = if (count > 0) "$count" else "–",
+                            fontSize = 11.sp,
+                            color = if (count > 0) Color(0xFF424242) else Color(0xFFBDBDBD),
+                            modifier = Modifier
+                                .width(22.dp)
+                                .padding(start = 4.dp),
+                            textAlign = TextAlign.End
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Закрыть") }
+        }
+    )
+}
+
+private fun totalDogDaysInMonth(clients: List<ClientInfo>, month: Int, year: Int): Int {
+    val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    val monthStart = LocalDate.of(year, month, 1)
+    val monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth())
+    val datePattern = Regex("""\d{2}\.\d{2}\.\d{4}""")
+    return clients.sumOf { client ->
+        if (client.boardingHistory.isBlank()) return@sumOf 0
+        var days = 0
+        for (line in client.boardingHistory.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.isBlank()) continue
+            val dates = datePattern.findAll(trimmed).mapNotNull { m ->
+                try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+            }.toList()
+            when {
+                dates.isEmpty() -> Unit
+                dates.size == 1 -> {
+                    val d = dates[0]
+                    if (d.monthValue == month && d.year == year) days++
+                }
+                else -> {
+                    val start = dates.first()
+                    val end = dates.last()
+                    if (!end.isBefore(monthStart) && !start.isAfter(monthEnd)) {
+                        val clippedStart = if (start.isBefore(monthStart)) monthStart else start
+                        val clippedEnd = if (end.isAfter(monthEnd)) monthEnd else end
+                        val d = (clippedEnd.toEpochDay() - clippedStart.toEpochDay() + 1).toInt()
+                        if (d > 0) days += d
+                    }
+                }
+            }
+        }
+        days
+    }
+}
+
+private fun findBoardingIntervalForMonth(client: ClientInfo, month: Int, year: Int): String? {
+    if (client.boardingHistory.isBlank()) return null
+    val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    val monthStart = LocalDate.of(year, month, 1)
+    val monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth())
+    val datePattern = Regex("""\d{2}\.\d{2}\.\d{4}""")
+    val line = client.boardingHistory.lines().firstOrNull { line ->
+        val trimmed = line.trim()
+        if (trimmed.isBlank()) return@firstOrNull false
+        val dates = datePattern.findAll(trimmed).mapNotNull { m ->
+            try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+        }.toList()
+        when (dates.size) {
+            0 -> false
+            1 -> dates[0].let { it.monthValue == month && it.year == year }
+            else -> !dates.last().isBefore(monthStart) && !dates.first().isAfter(monthEnd)
+        }
+    }?.trim() ?: return null
+    val dates = datePattern.findAll(line).map { it.value }.toList()
+    return if (dates.size >= 2) "${dates.first()} — ${dates.last()}" else dates.firstOrNull() ?: line
+}
+
+private fun clientHasBoardingInMonth(client: ClientInfo, month: Int, year: Int): Boolean {
+    if (client.boardingHistory.isBlank()) return false
+    val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    val monthStart = LocalDate.of(year, month, 1)
+    val monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth())
+    val datePattern = Regex("""\d{2}\.\d{2}\.\d{4}""")
+    return client.boardingHistory.lines().any { line ->
+        val trimmed = line.trim()
+        if (trimmed.isBlank()) return@any false
+        val dates = datePattern.findAll(trimmed).mapNotNull { m ->
+            try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+        }.toList()
+        when (dates.size) {
+            0 -> false
+            1 -> dates[0].let { it.monthValue == month && it.year == year }
+            // Range: overlaps with target month if start <= monthEnd AND end >= monthStart
+            else -> !dates.last().isBefore(monthStart) && !dates.first().isAfter(monthEnd)
+        }
+    }
 }
 
 private fun openWhatsApp(context: Context, phone: String) {

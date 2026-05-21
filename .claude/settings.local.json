@@ -23,7 +23,12 @@
       "Bash(Get-ChildItem -Path \"D:\\\\Projects\\\\Android\\\\Clavim\\\\app\\\\src\\\\main\\\\java\\\\com\\\\dodisrael\\\\clavim\" -Recurse -File)",
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(./gradlew assembleDebug --info)",
-      "Bash(gradlew.bat assembleDebug)"
+      "Bash(gradlew.bat assembleDebug)",
+      "Bash(Get-ChildItem -Path \"D:\\\\Projects\\\\Android\\\\Clavim\" -Force)",
+      "Bash(Select-Object Name, Mode)",
+      "Bash(xargs grep -l \"boarding\\\\|передержк\")",
+      "Bash(xargs grep -l -i \"foster\")",
+      "Bash(xargs grep -l \"class.*Repository\\\\|interface.*Repository\")"
     ]
   }
 }
