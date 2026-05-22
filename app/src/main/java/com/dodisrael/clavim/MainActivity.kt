@@ -179,7 +179,8 @@ fun AppContent() {
         Screen.FOSTERING_CLIENTS   -> ClientsListScreen(
             initialMonthFilter = clientsInitialMonthFilter,
             onBack = { clientsInitialMonthFilter = null; screen = clientsReturnScreen },
-            onRepeatBoarding = { dogName, clarification ->
+            onRepeatBoarding = { dogName, clarification, filter ->
+                clientsInitialMonthFilter = filter
                 boardingPresetDogName = dogName
                 boardingPresetClarification = clarification
                 boardingInitialAction = "add"
@@ -187,7 +188,8 @@ fun AppContent() {
                 boardingReturnScreen = Screen.FOSTERING_CLIENTS
                 screen = Screen.BOARDING_ASSISTANT
             },
-            onDeleteBoarding = { dogName, clarification ->
+            onDeleteBoarding = { dogName, clarification, filter ->
+                clientsInitialMonthFilter = filter
                 boardingPresetDogName = dogName
                 boardingPresetClarification = clarification
                 boardingInitialAction = "delete"

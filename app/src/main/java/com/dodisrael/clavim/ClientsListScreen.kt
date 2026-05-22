@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Pets
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -119,8 +120,8 @@ private data class ClientInfo(
 @Composable
 fun ClientsListScreen(
     onBack: () -> Unit,
-    onRepeatBoarding: (dogName: String, clarification: String) -> Unit,
-    onDeleteBoarding: (dogName: String, clarification: String) -> Unit,
+    onRepeatBoarding: (dogName: String, clarification: String, filter: Pair<Int, Int>?) -> Unit,
+    onDeleteBoarding: (dogName: String, clarification: String, filter: Pair<Int, Int>?) -> Unit,
     initialMonthFilter: Pair<Int, Int>? = null
 ) {
     val context = LocalContext.current
@@ -142,6 +143,8 @@ fun ClientsListScreen(
     var monthFilter by remember { mutableStateOf(initialMonthFilter) }
     var showMonthPicker by remember { mutableStateOf(false) }
     var showBoardingChart by remember { mutableStateOf(false) }
+    var galleryClient by remember { mutableStateOf<ClientInfo?>(null) }
+    var galleryPhotos by remember { mutableStateOf<List<String>?>(null) }
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = prefs.getInt("clients_scroll_index", 0),
         initialFirstVisibleItemScrollOffset = prefs.getInt("clients_scroll_offset", 0)
@@ -225,6 +228,19 @@ fun ClientsListScreen(
         } catch (e: Exception) {
             errorMessage = "Ошибка загрузки: ${e.message}"
             isLoading = false
+        }
+    }
+
+    LaunchedEffect(galleryClient) {
+        val c = galleryClient ?: return@LaunchedEffect
+        galleryPhotos = null
+        val apiKey = prefs.getString("openai_api_key", "") ?: ""
+        val photos = findAllClientPhotos(context, c, apiKey)
+        if (photos.isEmpty()) {
+            galleryClient = null
+            galleryPhotos = null
+        } else {
+            galleryPhotos = photos
         }
     }
 
@@ -330,6 +346,37 @@ fun ClientsListScreen(
 
     fullScreenPhotoUrl?.let { url ->
         FullScreenPhotoViewer(photos = listOf(url), onDismiss = { fullScreenPhotoUrl = null })
+    }
+
+    if (galleryClient != null) {
+        val photos = galleryPhotos
+        if (photos == null) {
+            AlertDialog(
+                onDismissRequest = { galleryClient = null },
+                text = {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            CircularProgressIndicator()
+                            Text("Загрузка фото ${galleryClient?.dogName}…", fontSize = 14.sp)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { galleryClient = null }) { Text("Отмена") }
+                }
+            )
+        } else if (photos.isNotEmpty()) {
+            FullScreenPhotoViewer(
+                photos = photos,
+                onDismiss = { galleryClient = null; galleryPhotos = null }
+            )
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -526,13 +573,14 @@ fun ClientsListScreen(
                         onCall = { callPhone(context, client.phone) },
                         onWhatsApp = { openWhatsApp(context, client.phone) },
                         onRepeatBoarding = {
-                            onRepeatBoarding(client.dogName, clientClarification(client))
+                            onRepeatBoarding(client.dogName, clientClarification(client), monthFilter)
                         },
                         onDeleteBoarding = {
-                            onDeleteBoarding(client.dogName, clientClarification(client))
+                            onDeleteBoarding(client.dogName, clientClarification(client), monthFilter)
                         },
                         onPhotoClick = { url -> fullScreenPhotoUrl = url },
-                        onHistoryClick = { showHistoryFor = client }
+                        onHistoryClick = { showHistoryFor = client },
+                        onGalleryClick = { galleryClient = client }
                     )
                 }
                 item { Spacer(Modifier.height(8.dp)) }
@@ -552,7 +600,8 @@ private fun ClientCard(
     onRepeatBoarding: () -> Unit,
     onDeleteBoarding: () -> Unit,
     onPhotoClick: (String) -> Unit,
-    onHistoryClick: () -> Unit
+    onHistoryClick: () -> Unit,
+    onGalleryClick: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -655,6 +704,12 @@ private fun ClientCard(
                         description = "Удалить из передержки",
                         color = Color(0xFFC62828),
                         onClick = onDeleteBoarding
+                    )
+                    ClientActionButton(
+                        icon = Icons.Default.CameraAlt,
+                        description = "Фото из Telegram",
+                        color = Color(0xFF0288D1),
+                        onClick = onGalleryClick
                     )
                 }
             }
@@ -939,6 +994,19 @@ private suspend fun findClientPhoto(
             !d.isBefore(startDate) && !d.isAfter(endDate)
         }?.photoUrl ?: posts.firstOrNull()?.photoUrl
     } catch (_: Exception) { null }
+}
+
+private suspend fun findAllClientPhotos(
+    context: Context,
+    client: ClientInfo,
+    apiKey: String
+): List<String> = withContext(Dispatchers.IO) {
+    try {
+        val raw = FosteringDatabase.get(context).dao().search(client.dogName)
+        if (raw.isEmpty()) return@withContext emptyList()
+        val posts = filterFosteringPosts(raw, apiKey, client.dogName)
+        posts.mapNotNull { it.photoUrl.takeIf { u -> u.isNotBlank() } }
+    } catch (_: Exception) { emptyList() }
 }
 
 private fun parsePastBoardingRange(s: String, yearHint: String = ""): Pair<String, String>? {
