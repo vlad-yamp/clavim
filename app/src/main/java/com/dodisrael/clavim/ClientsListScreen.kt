@@ -1275,8 +1275,46 @@ private fun BoardingChartDialog(
         onDismissRequest = onDismiss,
         title = { Text("${monthNames[month - 1]} $year") },
         text = {
-            Box(modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
-                Row(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
+            val hScroll = rememberScrollState()
+            Column {
+                // Заголовок: кружки с номерами собак — не скроллируется вертикально
+                if (intervals.isNotEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Spacer(Modifier.width(44.dp + 4.dp))
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .horizontalScroll(hScroll, enabled = false)
+                        ) {
+                            intervals.forEachIndexed { idx, _ ->
+                                val color = dogColors[idx % dogColors.size]
+                                Box(
+                                    modifier = Modifier.width(stripWidthDp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .background(color, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            "${idx + 1}",
+                                            fontSize = 8.sp,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(3.dp))
+                }
+
+                Box(modifier = Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState())) {
+                    Row(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
 
                     // Подписи дней — фиксированная ширина, не скроллируется
                     Column(modifier = Modifier.width(44.dp)) {
@@ -1324,7 +1362,7 @@ private fun BoardingChartDialog(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight()
-                                .horizontalScroll(rememberScrollState())
+                                .horizontalScroll(hScroll)
                         ) {
                             Canvas(
                                 modifier = Modifier
@@ -1434,8 +1472,9 @@ private fun BoardingChartDialog(
                             }
                         }
                     }
-                }
-            }
+                    } // Row
+                } // Box verticalScroll
+            } // Column
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
     )
