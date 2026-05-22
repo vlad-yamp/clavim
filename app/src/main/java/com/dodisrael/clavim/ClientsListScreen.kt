@@ -12,6 +12,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -1315,10 +1316,9 @@ private fun BoardingChartDialog(
         Color(0xFF00838F), Color(0xFFC62828), Color(0xFF4527A0), Color(0xFF558B2F)
     )
 
-    val rowHeightDp  = 20.dp
-    val stripWidthDp = 18.dp
-    val chartHeight  = rowHeightDp * totalDays
-    val density      = LocalDensity.current
+    val rowHeightDp = 20.dp
+    val chartHeight = rowHeightDp * totalDays
+    val density     = LocalDensity.current
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1332,6 +1332,13 @@ private fun BoardingChartDialog(
                 .windowInsetsPadding(WindowInsets.navigationBars)
         ) {
             val hScroll = rememberScrollState()
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val horizPad    = 24.dp   // Column padding(horizontal = 12.dp) × 2
+            val dateColWidth = 44.dp
+            val gap          = 4.dp
+            val stripAreaWidth = maxWidth - horizPad - dateColWidth - gap
+            val stripWidthDp = if (intervals.isEmpty()) 18.dp
+                else (stripAreaWidth / intervals.size).coerceAtLeast(14.dp)
             Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
 
                 // Заголовок по центру
@@ -1528,6 +1535,7 @@ private fun BoardingChartDialog(
                     } // Row
                 } // Box verticalScroll (weight 1f)
             } // Column
+            } // BoxWithConstraints
         } // Box fillMaxSize
     } // Dialog
 }
