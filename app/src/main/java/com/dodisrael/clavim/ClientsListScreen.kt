@@ -73,6 +73,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
@@ -1503,11 +1504,13 @@ private fun BoardingChartDialog(
                                         topLeft = Offset(x + 1f, inTop),
                                         size = Size(stripPx - 2f, inBot - inTop)
                                     )
-                                    // Цветная левая кромка
-                                    drawRect(
-                                        color = color.copy(alpha = 0.85f),
+                                    // Цветная рамка по периметру
+                                    drawRoundRect(
+                                        color = color.copy(alpha = 0.80f),
                                         topLeft = Offset(x + 1f, yTop),
-                                        size = Size(with(density) { 3.dp.toPx() }, yBot - yTop)
+                                        size = Size(stripPx - 2f, yBot - yTop),
+                                        cornerRadius = CornerRadius(with(density) { 4.dp.toPx() }),
+                                        style = Stroke(width = with(density) { 1.2.dp.toPx() })
                                     )
                                     // Имя собаки вертикально по центру полного интервала
                                     val cx = x + stripPx / 2f
