@@ -4,9 +4,12 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
@@ -70,6 +73,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -334,6 +338,7 @@ fun ClientsListScreen(
                 clients = filteredClients,
                 month = m,
                 year = y,
+                photoCache = photoCache,
                 onDismiss = { showBoardingChart = false }
             )
         }
@@ -1170,7 +1175,9 @@ private fun dogsPerDay(clients: List<ClientInfo>, month: Int, year: Int): List<I
     return counts.toList()
 }
 
-private data class DogInterval(val dogName: String, val actualStart: LocalDate, val actualEnd: LocalDate)
+private data class DogInterval(val client: ClientInfo, val actualStart: LocalDate, val actualEnd: LocalDate) {
+    val dogName get() = client.dogName
+}
 
 private fun dogIntervalsInMonth(clients: List<ClientInfo>, month: Int, year: Int): List<DogInterval> {
     val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
@@ -1188,9 +1195,8 @@ private fun dogIntervalsInMonth(clients: List<ClientInfo>, month: Int, year: Int
                 }.toList()
                 if (dates.size < 2) continue
                 val start = dates.first(); val end = dates.last()
-                // Only dogs overlapping the selected month, but store full actual dates
                 if (end.isBefore(monthStart) || start.isAfter(monthEnd)) continue
-                add(DogInterval(client.dogName, start, end))
+                add(DogInterval(client, start, end))
             }
         }
     }.sortedWith(compareBy({ it.actualStart }, { it.actualEnd }))
@@ -1285,6 +1291,7 @@ private fun BoardingChartDialog(
     clients: List<ClientInfo>,
     month: Int,
     year: Int,
+    photoCache: Map<String, String> = emptyMap(),
     onDismiss: () -> Unit
 ) {
     val monthStart = remember(month, year) { LocalDate.of(year, month, 1) }
@@ -1332,14 +1339,78 @@ private fun BoardingChartDialog(
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .windowInsetsPadding(WindowInsets.navigationBars)
         ) {
-            val hScroll = rememberScrollState()
+            var popupIdx by remember { mutableStateOf<Int?>(null) }
+            val dateFmt = remember { java.time.format.DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru")) }
+
+            popupIdx?.let { idx ->
+                val iv     = intervals[idx]
+                val client = iv.client
+                val color  = dogColors[idx % dogColors.size]
+                val photoUrl = photoCache[clientPhotoKey(client)]
+                Dialog(onDismissRequest = { popupIdx = null }) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(8.dp),
+                        border = BorderStroke(1.5.dp, color.copy(alpha = 0.55f)),
+                        colors = CardDefaults.cardColors(containerColor = Color.White)
+                    ) {
+                        Column {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .background(color)
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .padding(12.dp)
+                                    .height(IntrinsicSize.Max),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(client.dogName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                    if (client.ownerName.isNotBlank())
+                                        Text(client.ownerName, fontSize = 13.sp, color = Color(0xFF424242))
+                                    if (client.breed.isNotBlank())
+                                        Text(client.breed, fontSize = 12.sp, color = Color(0xFF757575))
+                                    if (client.phone.isNotBlank())
+                                        Text(client.phone, fontSize = 13.sp, color = Color(0xFF1565C0))
+                                    Text(
+                                        "${iv.actualStart.format(dateFmt)} — ${iv.actualEnd.format(dateFmt)}",
+                                        fontSize = 13.sp,
+                                        color = Color(0xFF2E7D32),
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                                if (photoUrl?.isNotBlank() == true) {
+                                    Spacer(Modifier.width(10.dp))
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(photoUrl).crossfade(true).build(),
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .width(107.dp)
+                                            .border(1.5.dp, Color(0xFF0D2B5E)),
+                                        contentScale = ContentScale.FillWidth
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val horizPad    = 24.dp   // Column padding(horizontal = 12.dp) × 2
+            val horizPad    = 24.dp
             val dateColWidth = 44.dp
             val gap          = 4.dp
             val stripAreaWidth = maxWidth - horizPad - dateColWidth - gap
             val stripWidthDp = if (intervals.isEmpty()) 18.dp
                 else (stripAreaWidth / intervals.size).coerceAtLeast(14.dp)
+            val stripPx = with(density) { stripWidthDp.toPx() }
             Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
 
                 // Заголовок по центру
@@ -1355,11 +1426,7 @@ private fun BoardingChartDialog(
                 if (intervals.isNotEmpty()) {
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Spacer(Modifier.width(44.dp + 4.dp))
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .horizontalScroll(hScroll, enabled = false)
-                        ) {
+                        Row(modifier = Modifier.weight(1f)) {
                             intervals.forEachIndexed { idx, _ ->
                                 val color = dogColors[idx % dogColors.size]
                                 Box(
@@ -1416,22 +1483,26 @@ private fun BoardingChartDialog(
                         }
                     }
 
-                    // Полосы собак — горизонтальный скролл когда их много
                     if (intervals.isNotEmpty()) {
                         Spacer(Modifier.width(4.dp))
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight()
-                                .horizontalScroll(hScroll)
                         ) {
                             Canvas(
                                 modifier = Modifier
                                     .width(stripWidthDp * intervals.size)
                                     .fillMaxHeight()
+                                    .pointerInput(intervals, stripPx) {
+                                        detectTapGestures { offset ->
+                                            val idx = (offset.x / stripPx).toInt()
+                                                .coerceIn(0, intervals.lastIndex)
+                                            popupIdx = idx
+                                        }
+                                    }
                             ) {
                                 val rowPx   = with(density) { rowHeightDp.toPx() }
-                                val stripPx = with(density) { stripWidthDp.toPx() }
                                 val mStartOff = (monthStart.toEpochDay() - chartStart.toEpochDay()).toInt()
                                 val mEndOff   = (monthEnd.toEpochDay()   - chartStart.toEpochDay()).toInt()
 
