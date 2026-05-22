@@ -1658,7 +1658,8 @@ private fun countDogs(dogName: String): Int {
 }
 
 // Возвращает заработок если дата окончания попадает в указанный месяц, иначе null.
-// Тариф: 1 собака — 120 ₪/день, 2 — 180 ₪/день, 3+ — 340 ₪/день.
+// С 2026: 1 — 120 ₪/день, 2 — 180 ₪/день, 3+ — 340 ₪/день.
+// До 2026: 1 — 100 ₪/день, 2 — 150 ₪/день, 3+ — 200 ₪/день.
 private fun intervalEarnings(intervalStr: String, month: Int, year: Int, dogName: String = ""): Int? {
     val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
     val datePattern = Regex("""\d{2}\.\d{2}\.\d{4}""")
@@ -1670,10 +1671,10 @@ private fun intervalEarnings(intervalStr: String, month: Int, year: Int, dogName
     if (end.monthValue != month || end.year != year) return null
     val days = Regex("""\((\d+)""").find(intervalStr)?.groupValues?.get(1)?.toIntOrNull()
         ?: (end.toEpochDay() - dates.first().toEpochDay() + 1).toInt()
-    val rate = when (countDogs(dogName)) {
-        1 -> 120
-        2 -> 180
-        else -> 340
+    val rate = if (year >= 2026) {
+        when (countDogs(dogName)) { 1 -> 120; 2 -> 180; else -> 240 }
+    } else {
+        when (countDogs(dogName)) { 1 -> 100; 2 -> 150; else -> 200 }
     }
     return days * rate
 }
