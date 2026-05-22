@@ -84,6 +84,7 @@ fun AppContent() {
             Screen.SETTINGS -> Screen.MAIN
             Screen.FOSTERING_MENU -> Screen.MAIN
             Screen.FOSTERING_CLIENTS -> { clientsInitialMonthFilter = null; clientsReturnScreen }
+            Screen.FOSTERING_NOTES -> Screen.FOSTERING_MENU
             Screen.BOARDING_ASSISTANT -> {
                 boardingInitialAction = null
                 boardingPresetDogName = ""
@@ -174,7 +175,8 @@ fun AppContent() {
                 boardingInitialAction = "delete"; boardingReturnScreen = Screen.FOSTERING_MENU
                 screen = Screen.BOARDING_ASSISTANT
             },
-            onClientsClick = { clientsInitialMonthFilter = null; clientsReturnScreen = Screen.FOSTERING_MENU; screen = Screen.FOSTERING_CLIENTS }
+            onClientsClick = { clientsInitialMonthFilter = null; clientsReturnScreen = Screen.FOSTERING_MENU; screen = Screen.FOSTERING_CLIENTS },
+            onNotesClick = { screen = Screen.FOSTERING_NOTES }
         )
         Screen.FOSTERING_CLIENTS   -> ClientsListScreen(
             initialMonthFilter = clientsInitialMonthFilter,
@@ -198,6 +200,7 @@ fun AppContent() {
                 screen = Screen.BOARDING_ASSISTANT
             }
         )
+        Screen.FOSTERING_NOTES     -> NotesScreen(onBack = { screen = Screen.FOSTERING_MENU })
         Screen.BOARDING_ASSISTANT  -> BoardingAssistantScreen(
             onBack = {
                 boardingInitialAction = null

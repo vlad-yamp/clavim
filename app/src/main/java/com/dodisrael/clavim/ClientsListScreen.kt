@@ -1,4 +1,4 @@
-package com.dodisrael.clavim
+﻿package com.dodisrael.clavim
 
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -51,6 +51,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.StickyNote2
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -154,6 +155,8 @@ fun ClientsListScreen(
     var showBoardingChart by remember { mutableStateOf(false) }
     var galleryClient by remember { mutableStateOf<ClientInfo?>(null) }
     var galleryPhotos by remember { mutableStateOf<List<String>?>(null) }
+    var boardingNotes by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var showNoteText by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = prefs.getInt("clients_scroll_index", 0),
         initialFirstVisibleItemScrollOffset = prefs.getInt("clients_scroll_offset", 0)
@@ -174,7 +177,8 @@ fun ClientsListScreen(
         photosLoaded = 0
         try {
             val googleApiKey = prefs.getString("google_api_key", "") ?: ""
-            val (csv, notes) = withContext(Dispatchers.IO) {
+            val scriptUrl = prefs.getString("addresses_script_url", "") ?: ""
+            val (csv, notes, bNotes) = withContext(Dispatchers.IO) {
                 val csvJob = async {
                     val conn = URL("$CLIENTS_SHEET_CSV&t=${System.currentTimeMillis()}").openConnection() as HttpURLConnection
                     conn.connectTimeout = 10_000
@@ -183,8 +187,10 @@ fun ClientsListScreen(
                     conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
                 }
                 val notesJob = async { fetchSheetNotes(googleApiKey) }
-                csvJob.await() to notesJob.await()
+                val boardingNotesJob = async { fetchBoardingNotes(scriptUrl) }
+                Triple(csvJob.await(), notesJob.await(), boardingNotesJob.await())
             }
+            boardingNotes = bNotes
             val parsed = parseClientsFromCsv(csv, notes)
             clients = parsed
             isLoading = false
@@ -330,6 +336,10 @@ fun ClientsListScreen(
 
     showHistoryFor?.let { client ->
         BoardingHistoryDialog(client = client, onDismiss = { showHistoryFor = null })
+    }
+
+    showNoteText?.let { text ->
+        NoteViewDialog(text = text, onDismiss = { showNoteText = null })
     }
 
     if (showBoardingChart) {
@@ -575,6 +585,14 @@ fun ClientsListScreen(
                     val earnings = monthFilter?.let { (m, y) ->
                         interval?.let { intervalEarnings(it, m, y, client.dogName) }
                     }
+                    val mf = monthFilter
+                    val noteText = if (mf != null) {
+                        val ownerNorm = client.ownerName.trim().lowercase()
+                        val dogNorm   = client.dogName.trim().lowercase()
+                        val clientKey = "$ownerNorm $dogNorm"
+                        boardingNotes["$clientKey|${mf.first}_${mf.second}"]
+                            ?: boardingNotes["$clientKey|"]
+                    } else null
                     ClientCard(
                         client = client,
                         photoUrl = photoUrl,
@@ -590,7 +608,9 @@ fun ClientsListScreen(
                         },
                         onPhotoClick = { url -> fullScreenPhotoUrl = url },
                         onHistoryClick = { showHistoryFor = client },
-                        onGalleryClick = { galleryClient = client }
+                        onGalleryClick = { galleryClient = client },
+                        noteText = noteText,
+                        onNoteClick = { showNoteText = noteText }
                     )
                 }
                 item { Spacer(Modifier.height(8.dp)) }
@@ -611,7 +631,9 @@ private fun ClientCard(
     onDeleteBoarding: () -> Unit,
     onPhotoClick: (String) -> Unit,
     onHistoryClick: () -> Unit,
-    onGalleryClick: () -> Unit
+    onGalleryClick: () -> Unit,
+    noteText: String? = null,
+    onNoteClick: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -724,7 +746,25 @@ private fun ClientCard(
                 }
             }
 
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(if (noteText != null) 4.dp else 10.dp))
+
+            if (noteText != null) {
+                Column(
+                    modifier = Modifier.fillMaxHeight(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    IconButton(onClick = onNoteClick, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Default.StickyNote2,
+                            contentDescription = "Заметка",
+                            tint = Color(0xFF388E3C),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(4.dp))
+            }
 
             // Dog photo on the right — fills full card height, fixed width
             Box(
@@ -792,7 +832,82 @@ private fun isValidIsraeliPhone(phone: String): Boolean {
     return digits.length in 9..10 && digits.startsWith("0")
 }
 
-// notes: key = "ownerName_lower|dogName_lower" → boarding history text
+private fun normalizeMonth(raw: String): String {
+    if (raw.contains('_')) {
+        val p = raw.split('_')
+        val m = p.getOrNull(0)?.toIntOrNull(); val y = p.getOrNull(1)?.toIntOrNull()
+        if (m != null && y != null) return "${m}_${y}"
+    }
+    if (raw.contains('/') && raw.length <= 7) {
+        val p = raw.split('/')
+        val m = p.getOrNull(0)?.toIntOrNull(); val y = p.getOrNull(1)?.toIntOrNull()
+        if (m != null && y != null) return "${m}_${y}"
+    }
+    val monthMap = mapOf("Jan" to 1, "Feb" to 2, "Mar" to 3, "Apr" to 4,
+        "May" to 5, "Jun" to 6, "Jul" to 7, "Aug" to 8,
+        "Sep" to 9, "Oct" to 10, "Nov" to 11, "Dec" to 12)
+    val tokens = raw.split(" ")
+    val monthNum = monthMap[tokens.getOrNull(1)]
+    val year = tokens.getOrNull(3)?.toIntOrNull()
+    if (monthNum != null && year != null) return "${monthNum}_${year}"
+    return raw
+}
+
+// notes: key = "ownernorm dogname|M_YYYY"
+private suspend fun fetchBoardingNotes(scriptUrl: String): Map<String, String> {
+    if (scriptUrl.isBlank()) return emptyMap()
+    return try {
+        withContext(Dispatchers.IO) {
+            val conn = URL("$scriptUrl?sheet=Заметки").openConnection() as HttpURLConnection
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 15_000
+            if (conn.responseCode != 200) return@withContext emptyMap()
+            val json = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).readText())
+            if (!json.optBoolean("ok", false)) return@withContext emptyMap()
+            val arr = json.getJSONArray("rows")
+            buildMap {
+                val dashRegex = Regex("\\s*\\p{Pd}\\s*")
+                for (i in 0 until arr.length()) {
+                    val obj      = arr.getJSONObject(i)
+                    val rawKey   = obj.optString("key").trim()
+                    val rawMonth = obj.optString("month").trim()
+                    val value    = obj.optString("value").trim()
+                    if (rawKey.isBlank() || value.isBlank()) continue
+                    val parts     = rawKey.split(dashRegex, limit = 2)
+                    val ownerNorm = parts.getOrNull(0)?.trim()?.lowercase()
+                    val dogNorm   = parts.getOrNull(1)?.trim()?.lowercase()
+                    val month     = normalizeMonth(rawMonth)
+                    if (!ownerNorm.isNullOrBlank() && !dogNorm.isNullOrBlank()) {
+                        put("$ownerNorm $dogNorm|$month", value)
+                    }
+                }
+            }
+        }
+    } catch (_: Exception) { emptyMap() }
+}
+
+@Composable
+private fun NoteViewDialog(text: String, onDismiss: () -> Unit) {
+    val scroll = rememberScrollState()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Заметка", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(scroll)
+            ) {
+                Text(text, fontSize = 15.sp, color = Color(0xFF1C1B1F))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Закрыть") }
+        }
+    )
+}
+
 private fun parseClientsFromCsv(csv: String, notes: Map<String, String> = emptyMap()): List<ClientInfo> {
     val all = csv.lines().drop(1).mapIndexedNotNull { _, line ->
         if (line.isBlank()) return@mapIndexedNotNull null

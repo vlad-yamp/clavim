@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Note
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.runtime.Composable
@@ -28,7 +29,8 @@ fun FosteringMenuScreen(
     onNewDogClick: () -> Unit,
     onExistingDogClick: () -> Unit,
     onDeleteDogClick: () -> Unit,
-    onClientsClick: () -> Unit
+    onClientsClick: () -> Unit,
+    onNotesClick: () -> Unit
 ) {
     val context = LocalContext.current
     val items = remember {
@@ -36,7 +38,8 @@ fun FosteringMenuScreen(
             MenuItem("Новая\nсобака", Icons.Default.Add, Color(0xFF388E3C)) { _ -> onNewDogClick() },
             MenuItem("Повторная\nпередержка", Icons.Default.Pets, Color(0xFF1565C0)) { _ -> onExistingDogClick() },
             MenuItem("Удаление\nиз передержки", Icons.Default.Delete, Color(0xFFD32F2F)) { _ -> onDeleteDogClick() },
-            MenuItem("Клиенты", Icons.Default.People, Color(0xFF7B1FA2)) { _ -> onClientsClick() }
+            MenuItem("Клиенты", Icons.Default.People, Color(0xFF7B1FA2)) { _ -> onClientsClick() },
+            MenuItem("Заметки", Icons.Default.Note, Color(0xFF00695C)) { _ -> onNotesClick() }
         )
     }
     Column(modifier = Modifier.fillMaxSize()) {
