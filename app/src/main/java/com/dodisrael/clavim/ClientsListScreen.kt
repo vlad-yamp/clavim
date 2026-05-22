@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -50,6 +51,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -1230,6 +1233,52 @@ private fun dogsPerDayRange(clients: List<ClientInfo>, rangeStart: LocalDate, ra
 }
 
 @Composable
+private fun DogFaceLabel(number: Int, color: Color) {
+    val density = LocalDensity.current
+    Canvas(modifier = Modifier.size(width = 18.dp, height = 22.dp)) {
+        val w = size.width
+        val h = size.height
+        val corner = with(density) { 3.dp.toPx() }
+
+        // Droopy bulldog ears — rounded rectangles hanging from upper sides
+        val earW = w * 0.27f
+        val earH = h * 0.50f
+        val earTop = h * 0.06f
+        drawRoundRect(
+            color = color.copy(alpha = 0.80f),
+            topLeft = Offset(0f, earTop),
+            size = Size(earW, earH),
+            cornerRadius = CornerRadius(corner)
+        )
+        drawRoundRect(
+            color = color.copy(alpha = 0.80f),
+            topLeft = Offset(w - earW, earTop),
+            size = Size(earW, earH),
+            cornerRadius = CornerRadius(corner)
+        )
+
+        // Round head overlapping the ears
+        val headCX = w / 2f
+        val headCY = h * 0.64f
+        val headR  = w * 0.40f
+        drawCircle(color = color, radius = headR, center = Offset(headCX, headCY))
+
+        // Number centred in head
+        val textSizePx = with(density) { 7.sp.toPx() }
+        drawIntoCanvas { canvas ->
+            val paint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                textSize    = textSizePx
+                textAlign   = android.graphics.Paint.Align.CENTER
+                this.color  = Color.White.toArgb()
+                typeface    = android.graphics.Typeface.DEFAULT_BOLD
+            }
+            canvas.nativeCanvas.drawText("$number", headCX, headCY + textSizePx * 0.38f, paint)
+        }
+    }
+}
+
+@Composable
 private fun BoardingChartDialog(
     clients: List<ClientInfo>,
     month: Int,
@@ -1271,13 +1320,30 @@ private fun BoardingChartDialog(
     val chartHeight  = rowHeightDp * totalDays
     val density      = LocalDensity.current
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("${monthNames[month - 1]} $year") },
-        text = {
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White)
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .windowInsetsPadding(WindowInsets.navigationBars)
+        ) {
             val hScroll = rememberScrollState()
-            Column {
-                // Заголовок: кружки с номерами собак — не скроллируется вертикально
+            Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+
+                // Заголовок по центру
+                Text(
+                    text = "${monthNames[month - 1]} $year",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp)
+                )
+
+                // Мордочки собак — не скроллируется вертикально
                 if (intervals.isNotEmpty()) {
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Spacer(Modifier.width(44.dp + 4.dp))
@@ -1292,20 +1358,7 @@ private fun BoardingChartDialog(
                                     modifier = Modifier.width(stripWidthDp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(16.dp)
-                                            .background(color, CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            "${idx + 1}",
-                                            fontSize = 8.sp,
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            textAlign = TextAlign.Center
-                                        )
-                                    }
+                                    DogFaceLabel(number = idx + 1, color = color)
                                 }
                             }
                         }
@@ -1313,7 +1366,7 @@ private fun BoardingChartDialog(
                     Spacer(Modifier.height(3.dp))
                 }
 
-                Box(modifier = Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState())) {
+                Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                     Row(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
 
                     // Подписи дней — фиксированная ширина, не скроллируется
@@ -1473,11 +1526,10 @@ private fun BoardingChartDialog(
                         }
                     }
                     } // Row
-                } // Box verticalScroll
+                } // Box verticalScroll (weight 1f)
             } // Column
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
-    )
+        } // Box fillMaxSize
+    } // Dialog
 }
 
 private fun totalDogDaysInMonth(clients: List<ClientInfo>, month: Int, year: Int): Int {
