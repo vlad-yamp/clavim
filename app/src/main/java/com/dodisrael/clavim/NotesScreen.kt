@@ -92,7 +92,7 @@ fun noteMonthDisplay(month: String): String {
     return "${NOTE_MONTH_NAMES_FULL.getOrNull(m - 1) ?: m} $y"
 }
 
-private fun loadNotes(prefs: android.content.SharedPreferences): List<NoteEntry> {
+fun loadNotes(prefs: android.content.SharedPreferences): List<NoteEntry> {
     val json = prefs.getString("fostering_notes", null) ?: return emptyList()
     return try {
         val arr = JSONArray(json)
@@ -103,7 +103,7 @@ private fun loadNotes(prefs: android.content.SharedPreferences): List<NoteEntry>
     } catch (_: Exception) { emptyList() }
 }
 
-private fun saveNotes(prefs: android.content.SharedPreferences, notes: List<NoteEntry>) {
+fun saveNotes(prefs: android.content.SharedPreferences, notes: List<NoteEntry>) {
     val arr = JSONArray()
     notes.forEach { n ->
         arr.put(JSONObject().apply { put("key", n.key); put("month", n.month); put("value", n.value) })
@@ -130,7 +130,7 @@ private suspend fun fetchNotesFromServer(url: String): List<NoteEntry> =
         }
     }
 
-private suspend fun saveNotesToServer(url: String, notes: List<NoteEntry>): Boolean =
+suspend fun saveNotesToServer(url: String, notes: List<NoteEntry>): Boolean =
     withContext(Dispatchers.IO) {
         try {
             val arr = JSONArray()

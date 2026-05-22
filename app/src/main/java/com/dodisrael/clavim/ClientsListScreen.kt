@@ -51,7 +51,8 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.StickyNote2
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -71,6 +72,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.CornerRadius
@@ -157,6 +159,9 @@ fun ClientsListScreen(
     var galleryPhotos by remember { mutableStateOf<List<String>?>(null) }
     var boardingNotes by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var showNoteText by remember { mutableStateOf<String?>(null) }
+    var quickNoteFor by remember { mutableStateOf<Triple<ClientInfo, Int, Int>?>(null) }
+    val notesPrefs = remember { context.getSharedPreferences("clavim_notes_prefs", Context.MODE_PRIVATE) }
+    val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = prefs.getInt("clients_scroll_index", 0),
         initialFirstVisibleItemScrollOffset = prefs.getInt("clients_scroll_offset", 0)
@@ -340,6 +345,31 @@ fun ClientsListScreen(
 
     showNoteText?.let { text ->
         NoteViewDialog(text = text, onDismiss = { showNoteText = null })
+    }
+
+    quickNoteFor?.let { (client, m, y) ->
+        QuickNoteDialog(
+            ownerName = client.ownerName.trim(),
+            dogName = client.dogName.trim(),
+            monthDisplay = noteMonthDisplay("${m}_${y}"),
+            onDismiss = { quickNoteFor = null },
+            onConfirm = { noteText ->
+                coroutineScope.launch {
+                    val noteKey = "${client.ownerName.trim()} — ${client.dogName.trim()}"
+                    val monthStr = "${m}_${y}"
+                    val existing = loadNotes(notesPrefs).toMutableList()
+                    existing.removeAll { e -> e.key == noteKey && e.month == monthStr }
+                    existing.add(NoteEntry(noteKey, monthStr, noteText))
+                    saveNotes(notesPrefs, existing)
+                    val scriptUrl = prefs.getString("addresses_script_url", "") ?: ""
+                    if (scriptUrl.isNotBlank()) saveNotesToServer(scriptUrl, existing)
+                    val ownerNorm = client.ownerName.trim().lowercase()
+                    val dogNorm = client.dogName.trim().lowercase()
+                    boardingNotes = boardingNotes + mapOf("$ownerNorm $dogNorm|$monthStr" to noteText)
+                    quickNoteFor = null
+                }
+            }
+        )
     }
 
     if (showBoardingChart) {
@@ -593,6 +623,7 @@ fun ClientsListScreen(
                         boardingNotes["$clientKey|${mf.first}_${mf.second}"]
                             ?: boardingNotes["$clientKey|"]
                     } else null
+                    val showAddNote = mf != null && noteText == null
                     ClientCard(
                         client = client,
                         photoUrl = photoUrl,
@@ -610,7 +641,9 @@ fun ClientsListScreen(
                         onHistoryClick = { showHistoryFor = client },
                         onGalleryClick = { galleryClient = client },
                         noteText = noteText,
-                        onNoteClick = { showNoteText = noteText }
+                        onNoteClick = { showNoteText = noteText },
+                        showAddNote = showAddNote,
+                        onAddNoteClick = { if (mf != null) quickNoteFor = Triple(client, mf.first, mf.second) }
                     )
                 }
                 item { Spacer(Modifier.height(8.dp)) }
@@ -633,7 +666,9 @@ private fun ClientCard(
     onHistoryClick: () -> Unit,
     onGalleryClick: () -> Unit,
     noteText: String? = null,
-    onNoteClick: () -> Unit = {}
+    onNoteClick: () -> Unit = {},
+    showAddNote: Boolean = false,
+    onAddNoteClick: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -746,21 +781,36 @@ private fun ClientCard(
                 }
             }
 
-            Spacer(Modifier.width(if (noteText != null) 4.dp else 10.dp))
+            val hasNoteIcon = noteText != null || showAddNote
+            Spacer(Modifier.width(if (hasNoteIcon) 4.dp else 10.dp))
 
-            if (noteText != null) {
+            if (hasNoteIcon) {
                 Column(
-                    modifier = Modifier.fillMaxHeight(),
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(36.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                    verticalArrangement = Arrangement.Top
                 ) {
-                    IconButton(onClick = onNoteClick, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            Icons.Default.StickyNote2,
-                            contentDescription = "Заметка",
-                            tint = Color(0xFF388E3C),
-                            modifier = Modifier.size(22.dp)
-                        )
+                    Spacer(Modifier.height(6.dp))
+                    if (noteText != null) {
+                        IconButton(onClick = onNoteClick, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Default.PriorityHigh,
+                                contentDescription = "Заметка",
+                                tint = Color(0xFFD32F2F),
+                                modifier = Modifier.size(30.dp)
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = onAddNoteClick, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = "Добавить заметку",
+                                tint = Color(0xFFBDBDBD),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.width(4.dp))
@@ -884,6 +934,44 @@ private suspend fun fetchBoardingNotes(scriptUrl: String): Map<String, String> {
             }
         }
     } catch (_: Exception) { emptyMap() }
+}
+
+@Composable
+private fun QuickNoteDialog(
+    ownerName: String,
+    dogName: String,
+    monthDisplay: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var text by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("$ownerName — $dogName", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        },
+        text = {
+            Column {
+                Text(monthDisplay, fontSize = 13.sp, color = Color(0xFF757575))
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("Текст заметки…") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 6
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(text.trim()) }, enabled = text.isNotBlank()) {
+                Text("Сохранить")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        }
+    )
 }
 
 @Composable
