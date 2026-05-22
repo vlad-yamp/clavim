@@ -747,7 +747,10 @@ private fun ClientCard(
 
                 Spacer(Modifier.height(10.dp))
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
                     ClientActionButton(
                         icon = Icons.Default.Call,
                         description = "Позвонить",
@@ -866,14 +869,15 @@ private fun ClientActionButton(
     color: Color,
     onClick: () -> Unit
 ) {
-    IconButton(
-        onClick = onClick,
+    Box(
         modifier = Modifier
-            .size(40.dp)
+            .size(34.dp)
             .clip(CircleShape)
             .background(color.copy(alpha = 0.13f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = description, tint = color, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = description, tint = color, modifier = Modifier.size(17.dp))
     }
 }
 
