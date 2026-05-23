@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Note
 import androidx.compose.material.icons.filled.People
@@ -30,7 +31,8 @@ fun FosteringMenuScreen(
     onExistingDogClick: () -> Unit,
     onDeleteDogClick: () -> Unit,
     onClientsClick: () -> Unit,
-    onNotesClick: () -> Unit
+    onNotesClick: () -> Unit,
+    onStatsClick: () -> Unit
 ) {
     val context = LocalContext.current
     val items = remember {
@@ -39,7 +41,8 @@ fun FosteringMenuScreen(
             MenuItem("Повторная\nпередержка", Icons.Default.Pets, Color(0xFF1565C0)) { _ -> onExistingDogClick() },
             MenuItem("Удаление\nиз передержки", Icons.Default.Delete, Color(0xFFD32F2F)) { _ -> onDeleteDogClick() },
             MenuItem("Клиенты", Icons.Default.People, Color(0xFF7B1FA2)) { _ -> onClientsClick() },
-            MenuItem("Заметки", Icons.Default.Note, Color(0xFF00695C)) { _ -> onNotesClick() }
+            MenuItem("Заметки", Icons.Default.Note, Color(0xFF00695C)) { _ -> onNotesClick() },
+            MenuItem("Статистика", Icons.Default.BarChart, Color(0xFF0D47A1)) { _ -> onStatsClick() }
         )
     }
     Column(modifier = Modifier.fillMaxSize()) {
