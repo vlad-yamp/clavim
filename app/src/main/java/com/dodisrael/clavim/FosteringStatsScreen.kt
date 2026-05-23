@@ -5,11 +5,13 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -48,6 +50,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -165,7 +168,7 @@ private suspend fun fetchStatsData(): List<StatsRow> = withContext(Dispatchers.I
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 @Composable
-fun FosteringStatsScreen(onBack: () -> Unit) {
+fun FosteringStatsScreen(onBack: () -> Unit, onClientMonthClick: (month: Int, year: Int) -> Unit = { _, _ -> }) {
     var rows      by remember { mutableStateOf<List<StatsRow>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var error     by remember { mutableStateOf("") }
@@ -197,7 +200,7 @@ fun FosteringStatsScreen(onBack: () -> Unit) {
             rows.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Нет данных", color = Color(0xFF9E9E9E))
             }
-            else -> StatsBody(rows, selCol, currentMonth) { col -> selCol = if (selCol == col) null else col }
+            else -> StatsBody(rows, selCol, currentMonth, onClientMonthClick) { col -> selCol = if (selCol == col) null else col }
         }
     }
 }
@@ -209,6 +212,7 @@ private fun StatsBody(
     rows: List<StatsRow>,
     selCol: StatsCol?,
     currentMonth: String,
+    onClientMonthClick: (month: Int, year: Int) -> Unit,
     onColClick: (StatsCol) -> Unit
 ) {
     val density = LocalDensity.current
@@ -258,6 +262,12 @@ private fun StatsBody(
                 rows = rows,
                 col  = selCol,
                 currentMonth = currentMonth,
+                onBarClick = { monthStr ->
+                    val p  = monthStr.split(".")
+                    val m  = p.getOrNull(0)?.toIntOrNull()
+                    val yy = p.getOrNull(1)?.toIntOrNull()
+                    if (m != null && yy != null) onClientMonthClick(m, 2000 + yy)
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(with(density) { chartHeightPx.toDp() })
@@ -428,10 +438,19 @@ private fun DataColumnsRow(row: StatsRow, even: Boolean, selCol: StatsCol?, isCu
 private val CHART_SLOT_DP = 44.dp
 
 @Composable
-private fun BarChart(rows: List<StatsRow>, col: StatsCol, currentMonth: String, modifier: Modifier) {
-    val values   = remember(rows, col) { rows.map { col.getter(it) } }
-    val maxVal   = remember(values) { values.maxOrNull()?.takeIf { it > 0.0 } ?: 1.0 }
+private fun BarChart(
+    rows: List<StatsRow>,
+    col: StatsCol,
+    currentMonth: String,
+    onBarClick: (String) -> Unit,
+    modifier: Modifier
+) {
+    val currentIdx = remember(rows, currentMonth) { rows.indexOfFirst { it.month == currentMonth } }
+    val values     = remember(rows, col) { rows.map { col.getter(it) } }
+    val maxVal     = remember(values) { values.maxOrNull()?.takeIf { it > 0.0 } ?: 1.0 }
     val totalWidth = CHART_SLOT_DP * rows.size
+    val hScroll    = rememberScrollState()
+    val density    = LocalDensity.current
 
     Card(
         modifier = modifier,
@@ -448,16 +467,34 @@ private fun BarChart(rows: List<StatsRow>, col: StatsCol, currentMonth: String, 
                 col.label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                 color = col.color, modifier = Modifier.padding(bottom = 4.dp)
             )
+            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                val visiblePx = with(density) { maxWidth.toPx() }
+
+                LaunchedEffect(currentIdx, visiblePx) {
+                    if (currentIdx >= 0 && visiblePx > 0f) {
+                        val slotPx  = with(density) { CHART_SLOT_DP.toPx() }
+                        val centerPx = currentIdx * slotPx + slotPx / 2f
+                        val target  = (centerPx - visiblePx / 2f).coerceAtLeast(0f)
+                        hScroll.scrollTo(target.toInt())
+                    }
+                }
+
             Box(
                 Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .horizontalScroll(rememberScrollState())
+                    .fillMaxSize()
+                    .horizontalScroll(hScroll)
             ) {
                 Canvas(
                     Modifier
                         .width(totalWidth)
                         .fillMaxHeight()
+                        .pointerInput(rows) {
+                            detectTapGestures { offset ->
+                                val slotW = size.width.toFloat() / rows.size.coerceAtLeast(1)
+                                val idx   = (offset.x / slotW).toInt().coerceIn(0, rows.lastIndex)
+                                onBarClick(rows[idx].month)
+                            }
+                        }
                 ) {
                     val n = rows.size
                     if (n == 0) return@Canvas
@@ -537,6 +574,7 @@ private fun BarChart(rows: List<StatsRow>, col: StatsCol, currentMonth: String, 
                     }
                 }
             }
+            } // BoxWithConstraints
         }
     }
 }

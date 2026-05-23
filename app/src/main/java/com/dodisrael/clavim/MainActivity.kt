@@ -203,7 +203,14 @@ fun AppContent() {
             }
         )
         Screen.FOSTERING_NOTES     -> NotesScreen(onBack = { screen = Screen.FOSTERING_MENU })
-        Screen.FOSTERING_STATS     -> FosteringStatsScreen(onBack = { screen = Screen.FOSTERING_MENU })
+        Screen.FOSTERING_STATS     -> FosteringStatsScreen(
+            onBack = { screen = Screen.FOSTERING_MENU },
+            onClientMonthClick = { m, y ->
+                clientsInitialMonthFilter = m to y
+                clientsReturnScreen = Screen.FOSTERING_STATS
+                screen = Screen.FOSTERING_CLIENTS
+            }
+        )
         Screen.BOARDING_ASSISTANT  -> BoardingAssistantScreen(
             onBack = {
                 boardingInitialAction = null
