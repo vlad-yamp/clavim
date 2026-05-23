@@ -57,6 +57,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.CardDefaults
@@ -353,10 +355,10 @@ fun ClientsListScreen(
             dogName = client.dogName.trim(),
             monthDisplay = noteMonthDisplay("${m}_${y}"),
             onDismiss = { quickNoteFor = null },
-            onConfirm = { noteText ->
+            onConfirm = { noteText, forAll ->
                 coroutineScope.launch {
                     val noteKey = "${client.ownerName.trim()} — ${client.dogName.trim()}"
-                    val monthStr = "${m}_${y}"
+                    val monthStr = if (forAll) "" else "${m}_${y}"
                     val existing = loadNotes(notesPrefs).toMutableList()
                     existing.removeAll { e -> e.key == noteKey && e.month == monthStr }
                     existing.add(NoteEntry(noteKey, monthStr, noteText))
@@ -946,9 +948,10 @@ private fun QuickNoteDialog(
     dogName: String,
     monthDisplay: String,
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
+    onConfirm: (text: String, forAll: Boolean) -> Unit
 ) {
     var text by remember { mutableStateOf("") }
+    var forAll by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -956,8 +959,24 @@ private fun QuickNoteDialog(
         },
         text = {
             Column {
-                Text(monthDisplay, fontSize = 13.sp, color = Color(0xFF757575))
-                Spacer(Modifier.height(10.dp))
+                if (!forAll) {
+                    Text(monthDisplay, fontSize = 13.sp, color = Color(0xFF757575))
+                    Spacer(Modifier.height(6.dp))
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { forAll = !forAll }
+                ) {
+                    Checkbox(
+                        checked = forAll,
+                        onCheckedChange = { forAll = it },
+                        colors = CheckboxDefaults.colors(checkedColor = Color(0xFF388E3C))
+                    )
+                    Text("Для всех передержек", fontSize = 14.sp)
+                }
+                Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
@@ -968,7 +987,7 @@ private fun QuickNoteDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(text.trim()) }, enabled = text.isNotBlank()) {
+            TextButton(onClick = { onConfirm(text.trim(), forAll) }, enabled = text.isNotBlank()) {
                 Text("Сохранить")
             }
         },

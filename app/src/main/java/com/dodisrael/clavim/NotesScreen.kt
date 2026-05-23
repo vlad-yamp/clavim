@@ -34,6 +34,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -83,8 +85,9 @@ private val NOTE_MONTH_NAMES_FULL  = listOf("Январь", "Февраль", "�
 
 data class NoteEntry(val key: String, val month: String, val value: String)
 
-/** month stored as "M_YYYY", displayed as full month name. Handles legacy "M/YYYY" format. */
+/** month stored as "M_YYYY", displayed as full month name. Blank = "Все передержки". */
 fun noteMonthDisplay(month: String): String {
+    if (month.isBlank()) return "Все передержки"
     val sep = if (month.contains('_')) '_' else '/'
     val parts = month.split(sep)
     val m = parts.getOrNull(0)?.toIntOrNull() ?: return month
@@ -375,6 +378,7 @@ private fun NoteEditDialog(
     var selectedMonth by remember { mutableIntStateOf(initParts?.getOrNull(0)?.toIntOrNull() ?: today.monthValue) }
     var selectedYear  by remember { mutableIntStateOf(initParts?.getOrNull(1)?.toIntOrNull() ?: today.year) }
     var value by remember { mutableStateOf(initial?.value ?: "") }
+    var forAll by remember { mutableStateOf(initial?.month.isNullOrBlank()) }
 
     var clientKeys by remember { mutableStateOf<List<String>>(emptyList()) }
     var keysLoading by remember { mutableStateOf(!isEditing) }
@@ -451,8 +455,23 @@ private fun NoteEditDialog(
                     }
                 }
 
+                // "For all boardings" toggle
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { forAll = !forAll }
+                ) {
+                    Checkbox(
+                        checked = forAll,
+                        onCheckedChange = { forAll = it },
+                        colors = CheckboxDefaults.colors(checkedColor = Color(0xFF388E3C))
+                    )
+                    Text("Для всех передержек", fontSize = 14.sp)
+                }
+
                 // Month picker
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (!forAll) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Месяц передержки", fontSize = 12.sp, color = Color(0xFF757575))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -513,7 +532,10 @@ private fun NoteEditDialog(
                 ) {
                     TextButton(onClick = onDismiss) { Text("Отмена") }
                     Button(
-                        onClick = { onConfirm(NoteEntry(key.trim(), "${selectedMonth}_$selectedYear", value.trim())) },
+                        onClick = {
+                            val month = if (forAll) "" else "${selectedMonth}_$selectedYear"
+                            onConfirm(NoteEntry(key.trim(), month, value.trim()))
+                        },
                         enabled = key.isNotBlank() && value.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF388E3C))
                     ) { Text("Сохранить", color = Color.White) }
