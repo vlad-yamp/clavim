@@ -54,6 +54,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -1872,6 +1873,7 @@ internal fun BoardingTimeline(
     month: Int,
     year: Int,
     photoCache: Map<String, String> = emptyMap(),
+    showFullscreenButton: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val monthStart = remember(month, year) { LocalDate.of(year, month, 1) }
@@ -1900,8 +1902,33 @@ internal fun BoardingTimeline(
     val rowHeightDp = 20.dp
     val chartHeight = rowHeightDp * totalDays
     val density     = LocalDensity.current
-    var popupIdx by remember { mutableStateOf<Int?>(null) }
+    var popupIdx    by remember { mutableStateOf<Int?>(null) }
+    var isFullscreen by remember { mutableStateOf(false) }
     val dateFmt = remember { java.time.format.DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru")) }
+
+    if (isFullscreen) {
+        Dialog(
+            onDismissRequest = { isFullscreen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White)
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+            ) {
+                BoardingTimeline(
+                    clients              = clients,
+                    month                = month,
+                    year                 = year,
+                    photoCache           = photoCache,
+                    showFullscreenButton = false,
+                    modifier             = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
 
     popupIdx?.let { idx ->
         if (idx in intervals.indices) {
@@ -1977,12 +2004,28 @@ internal fun BoardingTimeline(
 
             Column(modifier = Modifier.fillMaxSize().padding(horizontal = horizPad)) {
                 val n = intervals.size
-                Text(
-                    text = "${monthNames[month - 1]} $year — $n ${dogWord(n)}",
-                    fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-                )
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${monthNames[month - 1]} $year — $n ${dogWord(n)}",
+                        fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    if (showFullscreenButton) {
+                        Icon(
+                            imageVector = Icons.Default.Fullscreen,
+                            contentDescription = "Развернуть",
+                            tint = Color(0xFF757575),
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .clickable { isFullscreen = true }
+                        )
+                    }
+                }
                 Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                     Row(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
                         Column(modifier = Modifier.width(dateColWidth)) {

@@ -405,13 +405,14 @@ private fun StatsBody(
                         CircularProgressIndicator(color = Color(0xFF388E3C), modifier = Modifier.size(32.dp))
                     }
                     else -> BoardingTimeline(
-                        clients    = allClients.filter {
+                        clients              = allClients.filter {
                             clientHasBoardingInMonth(it, timelineMonth.first, timelineMonth.second)
                         },
-                        month      = timelineMonth.first,
-                        year       = timelineMonth.second,
-                        photoCache = photoCache,
-                        modifier   = Modifier.fillMaxSize()
+                        month                = timelineMonth.first,
+                        year                 = timelineMonth.second,
+                        photoCache           = photoCache,
+                        showFullscreenButton = true,
+                        modifier             = Modifier.fillMaxSize()
                     )
                 }
             }
