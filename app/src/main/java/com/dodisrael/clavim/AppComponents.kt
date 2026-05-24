@@ -74,75 +74,112 @@ fun AppHeader(
                 shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
             )
             .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(bottom = if (showBack) (if (compact) 4.dp else 12.dp) else 24.dp)
+            .padding(bottom = if (!showBack) 24.dp else if (compact) 0.dp else 12.dp)
     ) {
-        if (showBack) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Назад",
-                    tint = Color.White
-                )
-            }
-        }
-        if (showBack && actions != null) {
+        if (compact && showBack) {
             Row(
-                modifier = Modifier.align(Alignment.TopEnd).padding(horizontal = 4.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.End
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                actions()
-            }
-        }
-        if (!showBack && onSettingsClick != null) {
-            IconButton(
-                onClick = onSettingsClick,
-                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "Настройки",
-                    tint = Color.White.copy(alpha = 0.85f)
-                )
-            }
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = if (showBack) 0.dp else 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            if (!showBack) {
-                Image(
-                    painter = painterResource(R.mipmap.ic_launcher_foreground),
-                    contentDescription = null,
+                Box(
                     modifier = Modifier
-                        .size(73.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            } else {
-                Spacer(modifier = Modifier.height(if (compact) 4.dp else 44.dp))
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onBack),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Назад",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
                 Text(
                     text = title,
+                    modifier = Modifier.weight(1f),
                     color = Color.White,
-                    fontSize = if (compact) 17.sp else 20.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
+                if (actions != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) { actions() }
+                } else {
+                    Spacer(Modifier.size(36.dp))
+                }
             }
-            if (!compact) {
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = subtitle,
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 12.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 24.dp)
-                )
+        } else {
+            if (showBack) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Назад",
+                        tint = Color.White
+                    )
+                }
+            }
+            if (showBack && actions != null) {
+                Row(
+                    modifier = Modifier.align(Alignment.TopEnd).padding(horizontal = 4.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    actions()
+                }
+            }
+            if (!showBack && onSettingsClick != null) {
+                IconButton(
+                    onClick = onSettingsClick,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Настройки",
+                        tint = Color.White.copy(alpha = 0.85f)
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = if (showBack) 0.dp else 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (!showBack) {
+                    Image(
+                        painter = painterResource(R.mipmap.ic_launcher_foreground),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(73.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                } else {
+                    Spacer(modifier = Modifier.height(44.dp))
+                    Text(
+                        text = title,
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                if (!compact) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                }
             }
         }
     }

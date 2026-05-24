@@ -1401,6 +1401,13 @@ private fun dogsPerDay(clients: List<ClientInfo>, month: Int, year: Int): List<I
     return counts.toList()
 }
 
+private fun dogWord(n: Int): String = when {
+    n % 100 in 11..19 -> "собак"
+    n % 10 == 1        -> "собака"
+    n % 10 in 2..4     -> "собаки"
+    else               -> "собак"
+}
+
 internal val DOG_COLORS = listOf(
     Color(0xFF1565C0), Color(0xFF2E7D32), Color(0xFFE65100), Color(0xFF6A1B9A),
     Color(0xFF00838F), Color(0xFFC62828), Color(0xFF4527A0), Color(0xFF558B2F)
@@ -1632,42 +1639,25 @@ private fun BoardingChartDialog(
             }
 
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val horizPad    = 24.dp
-            val dateColWidth = 44.dp
-            val gap          = 4.dp
-            val stripAreaWidth = maxWidth - horizPad - dateColWidth - gap
+            val horizPad      = 24.dp
+            val dateColWidth  = 44.dp
+            val countColWidth = 22.dp
+            val gap           = 4.dp
+            val stripAreaWidth = maxWidth - horizPad - dateColWidth - countColWidth - gap
             val stripWidthDp = if (intervals.isEmpty()) 18.dp
                 else (stripAreaWidth / intervals.size).coerceAtLeast(14.dp)
             val stripPx = with(density) { stripWidthDp.toPx() }
             Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
 
                 // Заголовок по центру
+                val n = intervals.size
                 Text(
-                    text = "${monthNames[month - 1]} $year",
+                    text = "${monthNames[month - 1]} $year — $n ${dogWord(n)}",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp)
                 )
-
-                // Мордочки собак — не скроллируется вертикально
-                if (intervals.isNotEmpty()) {
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Spacer(Modifier.width(44.dp + 4.dp))
-                        Row(modifier = Modifier.weight(1f)) {
-                            intervals.forEachIndexed { idx, _ ->
-                                val color = dogColors[idx % dogColors.size]
-                                Box(
-                                    modifier = Modifier.width(stripWidthDp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    DogFaceLabel(number = idx + 1, color = color)
-                                }
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(3.dp))
-                }
 
                 Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                     Row(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
@@ -1678,6 +1668,7 @@ private fun BoardingChartDialog(
                             val date      = chartStart.plusDays(offset.toLong())
                             val inMonth   = date.monthValue == month && date.year == year
                             val isWeekend = date.dayOfWeek.value >= 6
+                            val isToday   = date == today
                             val label = if (inMonth)
                                 "%2d %s".format(date.dayOfMonth, dowLabels[date.dayOfWeek.value - 1])
                             else
@@ -1689,6 +1680,7 @@ private fun BoardingChartDialog(
                                     .height(rowHeightDp)
                                     .background(
                                         when {
+                                            isToday                -> Color(0xFF4CAF50).copy(alpha = 0.40f)
                                             overloaded && inMonth  -> Color(0xFFD32F2F).copy(alpha = 0.10f)
                                             overloaded && !inMonth -> Color(0xFFD32F2F).copy(alpha = 0.07f)
                                             !inMonth               -> Color(0xFFF5F5F5)
@@ -1701,11 +1693,43 @@ private fun BoardingChartDialog(
                                     label,
                                     fontSize = 10.sp,
                                     color = when {
+                                        isToday   -> Color(0xFF1B5E20)
                                         !inMonth  -> Color(0xFFBDBDBD)
                                         isWeekend -> Color(0xFFE53935)
                                         else      -> Color(0xFF424242)
                                     },
+                                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+
+                    Column(modifier = Modifier.width(countColWidth).fillMaxHeight()) {
+                        for (offset in 0 until totalDays) {
+                            val date    = chartStart.plusDays(offset.toLong())
+                            val inMonth = date.monthValue == month && date.year == year
+                            val count   = dogCountPerDay[offset]
+                            val countBg = when {
+                                !inMonth   -> Color.Transparent
+                                count == 0 -> Color(0xFF4CAF50).copy(alpha = 0.25f)
+                                count == 1 -> Color(0xFFFFEB3B).copy(alpha = 0.50f)
+                                count == 2 -> Color(0xFF29B6F6).copy(alpha = 0.35f)
+                                count == 3 -> Color(0xFFF48FB1).copy(alpha = 0.50f)
+                                else       -> Color(0xFFEF5350).copy(alpha = 0.40f)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(rowHeightDp)
+                                    .background(countBg),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (inMonth) Text(
+                                    text = count.toString(),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.Black
                                 )
                             }
                         }
@@ -1766,11 +1790,11 @@ private fun BoardingChartDialog(
                                     }
                                 }
 
-                                // Текущий день — бледная подсветка
+                                // Текущий день — зелёная подсветка
                                 val todayOffset = (today.toEpochDay() - chartStart.toEpochDay()).toInt()
                                 if (todayOffset in 0 until totalDays) {
                                     drawRect(
-                                        color = Color(0xFFFFB300).copy(alpha = 0.2f),
+                                        color = Color(0xFF4CAF50).copy(alpha = 0.22f),
                                         topLeft = Offset(0f, todayOffset * rowPx),
                                         size = Size(size.width, rowPx)
                                     )
@@ -1943,31 +1967,22 @@ internal fun BoardingTimeline(
                 )
             }
         } else {
-            val horizPad     = 12.dp
-            val dateColWidth = 44.dp
-            val gap          = 4.dp
-            val stripAreaWidth = maxWidth - horizPad * 2 - dateColWidth - gap
+            val horizPad      = 12.dp
+            val dateColWidth  = 44.dp
+            val countColWidth = 22.dp
+            val gap           = 4.dp
+            val stripAreaWidth = maxWidth - horizPad * 2 - dateColWidth - countColWidth - gap
             val stripWidthDp = (stripAreaWidth / intervals.size).coerceAtLeast(14.dp)
             val stripPx = with(density) { stripWidthDp.toPx() }
 
             Column(modifier = Modifier.fillMaxSize().padding(horizontal = horizPad)) {
+                val n = intervals.size
                 Text(
-                    text = "${monthNames[month - 1]} $year",
+                    text = "${monthNames[month - 1]} $year — $n ${dogWord(n)}",
                     fontSize = 14.sp, fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                 )
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Spacer(Modifier.width(dateColWidth + gap))
-                    Row(modifier = Modifier.weight(1f)) {
-                        intervals.forEachIndexed { idx, _ ->
-                            Box(Modifier.width(stripWidthDp), contentAlignment = Alignment.Center) {
-                                DogFaceLabel(idx + 1, DOG_COLORS[idx % DOG_COLORS.size])
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(3.dp))
                 Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                     Row(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
                         Column(modifier = Modifier.width(dateColWidth)) {
@@ -1975,6 +1990,7 @@ internal fun BoardingTimeline(
                                 val date      = chartStart.plusDays(offset.toLong())
                                 val inMonth   = date.monthValue == month && date.year == year
                                 val isWeekend = date.dayOfWeek.value >= 6
+                                val isToday   = date == today
                                 val label = if (inMonth)
                                     "%2d %s".format(date.dayOfMonth, dowLabels[date.dayOfWeek.value - 1])
                                 else
@@ -1983,6 +1999,7 @@ internal fun BoardingTimeline(
                                 Box(
                                     modifier = Modifier.fillMaxWidth().height(rowHeightDp).background(
                                         when {
+                                            isToday                -> Color(0xFF4CAF50).copy(alpha = 0.40f)
                                             overloaded && inMonth  -> Color(0xFFD32F2F).copy(alpha = 0.10f)
                                             overloaded && !inMonth -> Color(0xFFD32F2F).copy(alpha = 0.07f)
                                             !inMonth               -> Color(0xFFF5F5F5)
@@ -1993,11 +2010,42 @@ internal fun BoardingTimeline(
                                 ) {
                                     Text(label, fontSize = 10.sp,
                                         color = when {
+                                            isToday   -> Color(0xFF1B5E20)
                                             !inMonth  -> Color(0xFFBDBDBD)
                                             isWeekend -> Color(0xFFE53935)
                                             else      -> Color(0xFF424242)
                                         },
+                                        fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
+                        Column(modifier = Modifier.width(countColWidth).fillMaxHeight()) {
+                            for (offset in 0 until totalDays) {
+                                val date    = chartStart.plusDays(offset.toLong())
+                                val inMonth = date.monthValue == month && date.year == year
+                                val count   = dogCountPerDay[offset]
+                                val countBg = when {
+                                    !inMonth   -> Color.Transparent
+                                    count == 0 -> Color(0xFF4CAF50).copy(alpha = 0.25f)
+                                    count == 1 -> Color(0xFFFFEB3B).copy(alpha = 0.50f)
+                                    count == 2 -> Color(0xFF29B6F6).copy(alpha = 0.35f)
+                                    count == 3 -> Color(0xFFF48FB1).copy(alpha = 0.50f)
+                                    else       -> Color(0xFFEF5350).copy(alpha = 0.40f)
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(rowHeightDp)
+                                        .background(countBg),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (inMonth) Text(
+                                        text = count.toString(),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.Black
                                     )
                                 }
                             }
@@ -2037,7 +2085,7 @@ internal fun BoardingTimeline(
                                 }
                                 val todayOffset = (today.toEpochDay() - chartStart.toEpochDay()).toInt()
                                 if (todayOffset in 0 until totalDays)
-                                    drawRect(Color(0xFFFFB300).copy(alpha = 0.2f),
+                                    drawRect(Color(0xFF4CAF50).copy(alpha = 0.22f),
                                         Offset(0f, todayOffset * rowPx), Size(size.width, rowPx))
                                 if (mStartOff > 0)
                                     drawLine(Color(0xFFBDBDBD), Offset(0f, mStartOff * rowPx), Offset(size.width, mStartOff * rowPx), 1f)

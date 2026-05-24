@@ -321,7 +321,7 @@ private fun StatsBody(
     val density = LocalDensity.current
     val minChartPx = with(density) { 80.dp.toPx() }
     val maxChartPx = with(density) { 380.dp.toPx() }
-    var chartHeightPx by remember { mutableFloatStateOf(with(density) { 200.dp.toPx() }) }
+    var chartHeightPx by remember { mutableFloatStateOf(with(density) { 160.dp.toPx() }) }
 
     val hScroll = rememberScrollState()
     val vScroll = rememberScrollState()
