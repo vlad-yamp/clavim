@@ -116,12 +116,12 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
 
-private const val CLIENTS_SHEET_CSV =
+internal const val CLIENTS_SHEET_CSV =
     "https://docs.google.com/spreadsheets/d/1P44f7Fdk8_TiB6Rn67YLNbfnVHK7TIThMLsDiN6sgAs/export?format=csv&gid=1215152509"
 private const val SHEET_ID = "1P44f7Fdk8_TiB6Rn67YLNbfnVHK7TIThMLsDiN6sgAs"
 private const val CLIENTS_SHEET_GID = 1215152509
 
-private data class ClientInfo(
+data class ClientInfo(
     val ownerName: String,
     val phone: String,
     val breed: String,
@@ -1019,7 +1019,7 @@ private fun NoteViewDialog(text: String, onDismiss: () -> Unit) {
     )
 }
 
-private fun parseClientsFromCsv(csv: String, notes: Map<String, String> = emptyMap()): List<ClientInfo> {
+internal fun parseClientsFromCsv(csv: String, notes: Map<String, String> = emptyMap()): List<ClientInfo> {
     val all = csv.lines().drop(1).mapIndexedNotNull { _, line ->
         if (line.isBlank()) return@mapIndexedNotNull null
         val cols = splitCsvLine(line)
@@ -1052,7 +1052,7 @@ private fun parseClientsFromCsv(csv: String, notes: Map<String, String> = emptyM
 
 // Returns map keyed by "ownerName_lower|dogName_lower" → note text.
 // Matching by content (not row index) avoids mismatches caused by hidden/filtered rows.
-private suspend fun fetchSheetNotes(apiKey: String): Map<String, String> = withContext(Dispatchers.IO) {
+internal suspend fun fetchSheetNotes(apiKey: String): Map<String, String> = withContext(Dispatchers.IO) {
     if (apiKey.isBlank()) return@withContext emptyMap()
     try {
         // Step 1: resolve sheet name from GID (ranges param requires sheet title, not GID)
@@ -1193,7 +1193,7 @@ private fun splitCsvLine(line: String): List<String> {
     return cols
 }
 
-private fun clientPhotoKey(client: ClientInfo) = "${client.dogName}|${client.ownerName}|${client.breed}"
+internal fun clientPhotoKey(client: ClientInfo) = "${client.dogName}|${client.ownerName}|${client.breed}"
 
 private fun clientClarification(client: ClientInfo): String = when {
     client.breed.isNotBlank() && client.ownerName.isNotBlank() -> "${client.breed}, Хозяин: ${client.ownerName}"
@@ -1401,11 +1401,16 @@ private fun dogsPerDay(clients: List<ClientInfo>, month: Int, year: Int): List<I
     return counts.toList()
 }
 
-private data class DogInterval(val client: ClientInfo, val actualStart: LocalDate, val actualEnd: LocalDate) {
+internal val DOG_COLORS = listOf(
+    Color(0xFF1565C0), Color(0xFF2E7D32), Color(0xFFE65100), Color(0xFF6A1B9A),
+    Color(0xFF00838F), Color(0xFFC62828), Color(0xFF4527A0), Color(0xFF558B2F)
+)
+
+internal data class DogInterval(val client: ClientInfo, val actualStart: LocalDate, val actualEnd: LocalDate) {
     val dogName get() = client.dogName
 }
 
-private fun dogIntervalsInMonth(clients: List<ClientInfo>, month: Int, year: Int): List<DogInterval> {
+internal fun dogIntervalsInMonth(clients: List<ClientInfo>, month: Int, year: Int): List<DogInterval> {
     val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
     val monthStart = LocalDate.of(year, month, 1)
     val monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth())
@@ -1467,7 +1472,7 @@ private fun dogsPerDayRange(clients: List<ClientInfo>, rangeStart: LocalDate, ra
 }
 
 @Composable
-private fun DogFaceLabel(number: Int, color: Color) {
+internal fun DogFaceLabel(number: Int, color: Color) {
     val density = LocalDensity.current
     Canvas(modifier = Modifier.size(width = 18.dp, height = 22.dp)) {
         val w = size.width
@@ -1545,10 +1550,7 @@ private fun BoardingChartDialog(
                             "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь")
     val monthAbbr  = listOf("Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек")
     val dowLabels  = listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
-    val dogColors  = listOf(
-        Color(0xFF1565C0), Color(0xFF2E7D32), Color(0xFFE65100), Color(0xFF6A1B9A),
-        Color(0xFF00838F), Color(0xFFC62828), Color(0xFF4527A0), Color(0xFF558B2F)
-    )
+    val dogColors = DOG_COLORS
 
     val rowHeightDp = 20.dp
     val chartHeight = rowHeightDp * totalDays
@@ -1840,6 +1842,247 @@ private fun BoardingChartDialog(
     } // Dialog
 }
 
+@Composable
+internal fun BoardingTimeline(
+    clients: List<ClientInfo>,
+    month: Int,
+    year: Int,
+    photoCache: Map<String, String> = emptyMap(),
+    modifier: Modifier = Modifier
+) {
+    val monthStart = remember(month, year) { LocalDate.of(year, month, 1) }
+    val monthEnd   = remember(monthStart) { monthStart.withDayOfMonth(monthStart.lengthOfMonth()) }
+    val intervals  = remember(clients, month, year) { dogIntervalsInMonth(clients, month, year) }
+    val chartStart = remember(intervals, monthStart) {
+        intervals.minOfOrNull { it.actualStart }?.takeIf { it.isBefore(monthStart) } ?: monthStart
+    }
+    val chartEnd = remember(intervals, monthEnd) {
+        intervals.maxOfOrNull { it.actualEnd }?.takeIf { it.isAfter(monthEnd) } ?: monthEnd
+    }
+    val totalDays = remember(chartStart, chartEnd) {
+        (chartEnd.toEpochDay() - chartStart.toEpochDay() + 1).toInt()
+    }
+    val today = remember { LocalDate.now() }
+    val dogCountPerDay = remember(intervals, chartStart, totalDays) {
+        IntArray(totalDays) { offset ->
+            val date = chartStart.plusDays(offset.toLong())
+            intervals.count { !date.isBefore(it.actualStart) && !date.isAfter(it.actualEnd) }
+        }
+    }
+    val monthNames = listOf("Январь","Февраль","Март","Апрель","Май","Июнь",
+                            "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь")
+    val monthAbbr  = listOf("Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек")
+    val dowLabels  = listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
+    val rowHeightDp = 20.dp
+    val chartHeight = rowHeightDp * totalDays
+    val density     = LocalDensity.current
+    var popupIdx by remember { mutableStateOf<Int?>(null) }
+    val dateFmt = remember { java.time.format.DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru")) }
+
+    popupIdx?.let { idx ->
+        if (idx in intervals.indices) {
+            val iv       = intervals[idx]
+            val client   = iv.client
+            val color    = DOG_COLORS[idx % DOG_COLORS.size]
+            val photoUrl = photoCache[clientPhotoKey(client)]
+            Dialog(onDismissRequest = { popupIdx = null }) {
+                Card(
+                    shape  = RoundedCornerShape(16.dp),
+                    elevation = CardDefaults.cardElevation(8.dp),
+                    border = BorderStroke(1.5.dp, color.copy(alpha = 0.55f)),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(4.dp).background(color)
+                        )
+                        Row(
+                            modifier = Modifier.padding(12.dp).height(IntrinsicSize.Max),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(client.dogName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                if (client.ownerName.isNotBlank())
+                                    Text(client.ownerName, fontSize = 13.sp, color = Color(0xFF424242))
+                                if (client.breed.isNotBlank())
+                                    Text(client.breed, fontSize = 12.sp, color = Color(0xFF757575))
+                                if (client.phone.isNotBlank())
+                                    Text(client.phone, fontSize = 13.sp, color = Color(0xFF1565C0))
+                                Text(
+                                    "${iv.actualStart.format(dateFmt)} — ${iv.actualEnd.format(dateFmt)}",
+                                    fontSize = 13.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.Medium
+                                )
+                            }
+                            if (photoUrl?.isNotBlank() == true) {
+                                Spacer(Modifier.width(10.dp))
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(photoUrl).crossfade(true).build(),
+                                    contentDescription = null,
+                                    modifier = Modifier.width(107.dp).border(1.5.dp, Color(0xFF0D2B5E)),
+                                    contentScale = ContentScale.FillWidth
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    BoxWithConstraints(modifier = modifier) {
+        if (intervals.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    if (clients.isEmpty()) "Загрузка данных…" else "Нет передержек в ${monthNames[month - 1]}",
+                    color = Color(0xFF9E9E9E), fontSize = 14.sp,
+                    modifier = Modifier.padding(24.dp)
+                )
+            }
+        } else {
+            val horizPad     = 12.dp
+            val dateColWidth = 44.dp
+            val gap          = 4.dp
+            val stripAreaWidth = maxWidth - horizPad * 2 - dateColWidth - gap
+            val stripWidthDp = (stripAreaWidth / intervals.size).coerceAtLeast(14.dp)
+            val stripPx = with(density) { stripWidthDp.toPx() }
+
+            Column(modifier = Modifier.fillMaxSize().padding(horizontal = horizPad)) {
+                Text(
+                    text = "${monthNames[month - 1]} $year",
+                    fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                )
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.width(dateColWidth + gap))
+                    Row(modifier = Modifier.weight(1f)) {
+                        intervals.forEachIndexed { idx, _ ->
+                            Box(Modifier.width(stripWidthDp), contentAlignment = Alignment.Center) {
+                                DogFaceLabel(idx + 1, DOG_COLORS[idx % DOG_COLORS.size])
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(3.dp))
+                Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    Row(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
+                        Column(modifier = Modifier.width(dateColWidth)) {
+                            for (offset in 0 until totalDays) {
+                                val date      = chartStart.plusDays(offset.toLong())
+                                val inMonth   = date.monthValue == month && date.year == year
+                                val isWeekend = date.dayOfWeek.value >= 6
+                                val label = if (inMonth)
+                                    "%2d %s".format(date.dayOfMonth, dowLabels[date.dayOfWeek.value - 1])
+                                else
+                                    "%2d %s".format(date.dayOfMonth, monthAbbr[date.monthValue - 1])
+                                val overloaded = dogCountPerDay[offset] > 3
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().height(rowHeightDp).background(
+                                        when {
+                                            overloaded && inMonth  -> Color(0xFFD32F2F).copy(alpha = 0.10f)
+                                            overloaded && !inMonth -> Color(0xFFD32F2F).copy(alpha = 0.07f)
+                                            !inMonth               -> Color(0xFFF5F5F5)
+                                            else                   -> Color.Transparent
+                                        }
+                                    ),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    Text(label, fontSize = 10.sp,
+                                        color = when {
+                                            !inMonth  -> Color(0xFFBDBDBD)
+                                            isWeekend -> Color(0xFFE53935)
+                                            else      -> Color(0xFF424242)
+                                        },
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.width(gap))
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                            Canvas(
+                                modifier = Modifier
+                                    .width(stripWidthDp * intervals.size)
+                                    .fillMaxHeight()
+                                    .pointerInput(intervals, stripPx) {
+                                        detectTapGestures { offset ->
+                                            val idx = (offset.x / stripPx).toInt()
+                                                .coerceIn(0, intervals.lastIndex)
+                                            popupIdx = idx
+                                        }
+                                    }
+                            ) {
+                                val rowPx     = with(density) { rowHeightDp.toPx() }
+                                val mStartOff = (monthStart.toEpochDay() - chartStart.toEpochDay()).toInt()
+                                val mEndOff   = (monthEnd.toEpochDay()   - chartStart.toEpochDay()).toInt()
+                                for (offset in 0 until totalDays) {
+                                    val y    = offset * rowPx
+                                    val date = chartStart.plusDays(offset.toLong())
+                                    val inMonth = date.monthValue == month && date.year == year
+                                    if (!inMonth) drawRect(Color(0xFFF5F5F5), Offset(0f, y), Size(size.width, rowPx))
+                                    if (offset > 0) drawLine(Color(0xFFBDBDBD), Offset(0f, y), Offset(size.width, y), 0.7f)
+                                }
+                                for (offset in 0 until totalDays) {
+                                    if (dogCountPerDay[offset] > 3) {
+                                        val y = offset * rowPx
+                                        val date = chartStart.plusDays(offset.toLong())
+                                        val inMonth = date.monthValue == month && date.year == year
+                                        drawRect(Color(0xFFD32F2F).copy(alpha = if (inMonth) 0.13f else 0.08f),
+                                            Offset(0f, y), Size(size.width, rowPx))
+                                    }
+                                }
+                                val todayOffset = (today.toEpochDay() - chartStart.toEpochDay()).toInt()
+                                if (todayOffset in 0 until totalDays)
+                                    drawRect(Color(0xFFFFB300).copy(alpha = 0.2f),
+                                        Offset(0f, todayOffset * rowPx), Size(size.width, rowPx))
+                                if (mStartOff > 0)
+                                    drawLine(Color(0xFFBDBDBD), Offset(0f, mStartOff * rowPx), Offset(size.width, mStartOff * rowPx), 1f)
+                                if (mEndOff < totalDays - 1)
+                                    drawLine(Color(0xFFBDBDBD), Offset(0f, (mEndOff + 1) * rowPx), Offset(size.width, (mEndOff + 1) * rowPx), 1f)
+                                intervals.forEachIndexed { idx, interval ->
+                                    val color = DOG_COLORS[idx % DOG_COLORS.size]
+                                    val x     = idx * stripPx
+                                    val yTop  = (interval.actualStart.toEpochDay() - chartStart.toEpochDay()) * rowPx
+                                    val yBot  = (interval.actualEnd.toEpochDay()   - chartStart.toEpochDay() + 1) * rowPx
+                                    drawRoundRect(color.copy(alpha = 0.10f), Offset(x+1f, yTop), Size(stripPx-2f, yBot-yTop),
+                                        CornerRadius(with(density){4.dp.toPx()}))
+                                    val inTop = maxOf(yTop, mStartOff * rowPx)
+                                    val inBot = minOf(yBot, (mEndOff + 1) * rowPx)
+                                    if (inBot > inTop) drawRect(color.copy(alpha = 0.18f), Offset(x+1f, inTop), Size(stripPx-2f, inBot-inTop))
+                                    drawRoundRect(color.copy(alpha = 0.80f), Offset(x+1f, yTop), Size(stripPx-2f, yBot-yTop),
+                                        CornerRadius(with(density){4.dp.toPx()}),
+                                        style = Stroke(width = with(density){1.2.dp.toPx()}))
+                                    val cx = x + stripPx / 2f
+                                    val cy = (yTop + yBot) / 2f
+                                    val textSizePx = with(density) { 9.sp.toPx() }
+                                    val paint = android.graphics.Paint().apply {
+                                        isAntiAlias = true; textSize = textSizePx
+                                        textAlign = android.graphics.Paint.Align.CENTER
+                                        this.color = color.copy(alpha = 0.9f).toArgb()
+                                    }
+                                    drawIntoCanvas { canvas ->
+                                        canvas.nativeCanvas.apply {
+                                            save()
+                                            clipRect(x, yTop, x + stripPx, yBot)
+                                            rotate(-90f, cx, cy)
+                                            drawText(interval.dogName, cx, cy + textSizePx * 0.35f, paint)
+                                            restore()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun totalDogDaysInMonth(clients: List<ClientInfo>, month: Int, year: Int): Int {
     val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
     val monthStart = LocalDate.of(year, month, 1)
@@ -1982,7 +2225,7 @@ private fun boardingStartInMonth(client: ClientInfo, month: Int, year: Int): Loc
     return null
 }
 
-private fun clientHasBoardingInMonth(client: ClientInfo, month: Int, year: Int): Boolean {
+internal fun clientHasBoardingInMonth(client: ClientInfo, month: Int, year: Int): Boolean {
     if (client.boardingHistory.isBlank()) return false
     val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
     val monthStart = LocalDate.of(year, month, 1)

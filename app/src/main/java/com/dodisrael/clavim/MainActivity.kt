@@ -225,6 +225,7 @@ fun AppContent() {
                 clientsReturnScreen = Screen.BOARDING_ASSISTANT
                 screen = Screen.FOSTERING_CLIENTS
             },
+            onStatsClick = { screen = Screen.FOSTERING_STATS },
             initialFormAction = boardingInitialAction,
             presetDogName = boardingPresetDogName,
             presetClarification = boardingPresetClarification,

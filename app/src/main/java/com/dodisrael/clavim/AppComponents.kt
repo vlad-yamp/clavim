@@ -10,6 +10,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -62,7 +63,8 @@ fun AppHeader(
     showBack: Boolean,
     onBack: () -> Unit = {},
     onSettingsClick: (() -> Unit)? = null,
-    compact: Boolean = false
+    compact: Boolean = false,
+    actions: (@Composable () -> Unit)? = null
 ) {
     Box(
         modifier = Modifier
@@ -84,6 +86,14 @@ fun AppHeader(
                     contentDescription = "Назад",
                     tint = Color.White
                 )
+            }
+        }
+        if (showBack && actions != null) {
+            Row(
+                modifier = Modifier.align(Alignment.TopEnd).padding(horizontal = 4.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
+                actions()
             }
         }
         if (!showBack && onSettingsClick != null) {
