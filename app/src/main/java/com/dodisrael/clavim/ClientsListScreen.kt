@@ -1931,8 +1931,6 @@ private fun BoardingChartDialog(
                         val d = chartStart.plusDays(off.toLong())
                         if (d.monthValue == month && d.year == year) dogCountPerDay[off] else allDogCountPerDay[off]
                     }?.coerceAtLeast(1) ?: 1
-                    val currentMonthClientSet = intervals
-                        .map { "${it.client.dogName}|${it.client.ownerName}" }.toSet()
                     Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             for (offset in visibleOffsets) {
@@ -1960,11 +1958,11 @@ private fun BoardingChartDialog(
                                     .sortedBy { it.actualStart }
                                 val dogsAnnotated = buildAnnotatedString {
                                     dogsToday.forEachIndexed { i, dog ->
-                                        if (i > 0) withStyle(SpanStyle(color = Color(0xFF9E9E9E))) { append(", ") }
-                                        val isCurrent = inMonth || "${dog.client.dogName}|${dog.client.ownerName}" in currentMonthClientSet
+                                        if (i > 0) withStyle(SpanStyle(color = Color(0xFF757575))) { append(", ") }
+                                        val isCurrent = inMonth || (!dog.actualEnd.isBefore(monthStart) && !dog.actualStart.isAfter(monthEnd))
                                         withStyle(SpanStyle(
                                             fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
-                                            color = if (isCurrent) Color.Black.copy(alpha = 0.82f) else Color(0xFFBDBDBD)
+                                            color = if (isCurrent) Color.Black.copy(alpha = 0.82f) else Color(0xFF757575)
                                         )) { append(dog.dogName) }
                                     }
                                 }
@@ -2411,8 +2409,6 @@ internal fun BoardingTimeline(
                         val d = chartStart.plusDays(off.toLong())
                         if (d.monthValue == month && d.year == year) dogCountPerDay[off] else allDogCountPerDay[off]
                     }?.coerceAtLeast(1) ?: 1
-                    val currentMonthClientSet = intervals
-                        .map { "${it.client.dogName}|${it.client.ownerName}" }.toSet()
                     Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             for (offset in visibleOffsets) {
@@ -2440,11 +2436,11 @@ internal fun BoardingTimeline(
                                     .sortedBy { it.actualStart }
                                 val dogsAnnotated = buildAnnotatedString {
                                     dogsToday.forEachIndexed { i, dog ->
-                                        if (i > 0) withStyle(SpanStyle(color = Color(0xFF9E9E9E))) { append(", ") }
-                                        val isCurrent = inMonth || "${dog.client.dogName}|${dog.client.ownerName}" in currentMonthClientSet
+                                        if (i > 0) withStyle(SpanStyle(color = Color(0xFF757575))) { append(", ") }
+                                        val isCurrent = inMonth || (!dog.actualEnd.isBefore(monthStart) && !dog.actualStart.isAfter(monthEnd))
                                         withStyle(SpanStyle(
                                             fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
-                                            color = if (isCurrent) Color.Black.copy(alpha = 0.82f) else Color(0xFFBDBDBD)
+                                            color = if (isCurrent) Color.Black.copy(alpha = 0.82f) else Color(0xFF757575)
                                         )) { append(dog.dogName) }
                                     }
                                 }
