@@ -1611,6 +1611,7 @@ private fun BoardingChartDialog(
         ) {
             var popupIdx  by remember { mutableStateOf<Int?>(null) }
             var chartType by remember { mutableStateOf(TimelineChartType.TIMELINE) }
+            var showBreed by remember { mutableStateOf(false) }
             val dateFmt = remember { java.time.format.DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru")) }
 
             popupIdx?.let { idx ->
@@ -1714,6 +1715,30 @@ private fun BoardingChartDialog(
                             tint = if (chartType == TimelineChartType.BAR) Color(0xFF388E3C) else Color(0xFFBDBDBD),
                             modifier = Modifier.size(24.dp).clickable { chartType = TimelineChartType.BAR }
                         )
+                    }
+                    if (chartType == TimelineChartType.BAR) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { showBreed = !showBreed }
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Pets,
+                                contentDescription = if (showBreed) "Показать клички" else "Показать породы",
+                                tint = Color(0xFF388E3C),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = if (showBreed) "Пор" else "Кл",
+                                fontSize = 10.sp,
+                                color = Color(0xFF388E3C),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
 
@@ -1963,7 +1988,7 @@ private fun BoardingChartDialog(
                                         withStyle(SpanStyle(
                                             fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
                                             color = if (isCurrent) Color.Black.copy(alpha = 0.82f) else Color(0xFF757575)
-                                        )) { append(dog.dogName) }
+                                        )) { append(if (showBreed) dog.client.breed else dog.dogName) }
                                     }
                                 }
                                 Row(
@@ -2054,6 +2079,7 @@ internal fun BoardingTimeline(
     photoCache: Map<String, String> = emptyMap(),
     showFullscreenButton: Boolean = false,
     initialChartType: TimelineChartType = TimelineChartType.TIMELINE,
+    initialShowBreed: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val monthStart = remember(month, year) { LocalDate.of(year, month, 1) }
@@ -2111,6 +2137,7 @@ internal fun BoardingTimeline(
     var popupIdx    by remember { mutableStateOf<Int?>(null) }
     var isFullscreen by remember { mutableStateOf(false) }
     var chartType   by remember { mutableStateOf(initialChartType) }
+    var showBreed   by remember { mutableStateOf(initialShowBreed) }
     val dateFmt = remember { java.time.format.DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru")) }
 
     if (isFullscreen) {
@@ -2133,6 +2160,7 @@ internal fun BoardingTimeline(
                     photoCache           = photoCache,
                     showFullscreenButton = false,
                     initialChartType     = chartType,
+                    initialShowBreed     = showBreed,
                     modifier             = Modifier.fillMaxSize()
                 )
             }
@@ -2240,17 +2268,44 @@ internal fun BoardingTimeline(
                             modifier = Modifier.size(24.dp).clickable { chartType = TimelineChartType.BAR }
                         )
                     }
-                    if (showFullscreenButton) {
-                        Icon(
-                            imageVector = Icons.Default.Fullscreen,
-                            contentDescription = "Развернуть",
-                            tint = Color(0xFF757575),
-                            modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .clickable { isFullscreen = true }
-                        )
+                    Row(
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (chartType == TimelineChartType.BAR) {
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { showBreed = !showBreed }
+                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Pets,
+                                    contentDescription = if (showBreed) "Показать клички" else "Показать породы",
+                                    tint = Color(0xFF388E3C),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = if (showBreed) "Пор" else "Кл",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF388E3C),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                        if (showFullscreenButton) {
+                            Icon(
+                                imageVector = Icons.Default.Fullscreen,
+                                contentDescription = "Развернуть",
+                                tint = Color(0xFF757575),
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .clickable { isFullscreen = true }
+                            )
+                        }
                     }
                 }
                 when (chartType) {
@@ -2441,7 +2496,7 @@ internal fun BoardingTimeline(
                                         withStyle(SpanStyle(
                                             fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
                                             color = if (isCurrent) Color.Black.copy(alpha = 0.82f) else Color(0xFF757575)
-                                        )) { append(dog.dogName) }
+                                        )) { append(if (showBreed) dog.client.breed else dog.dogName) }
                                     }
                                 }
                                 Row(
