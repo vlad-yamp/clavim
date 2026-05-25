@@ -94,9 +94,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -1928,6 +1931,8 @@ private fun BoardingChartDialog(
                         val d = chartStart.plusDays(off.toLong())
                         if (d.monthValue == month && d.year == year) dogCountPerDay[off] else allDogCountPerDay[off]
                     }?.coerceAtLeast(1) ?: 1
+                    val currentMonthClientSet = intervals
+                        .map { "${it.client.dogName}|${it.client.ownerName}" }.toSet()
                     Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             for (offset in visibleOffsets) {
@@ -1953,7 +1958,16 @@ private fun BoardingChartDialog(
                                 val dogsToday   = srcIntervals
                                     .filter { !date.isBefore(it.actualStart) && !date.isAfter(it.actualEnd) }
                                     .sortedBy { it.actualStart }
-                                val dogsText    = dogsToday.joinToString(", ") { it.dogName }
+                                val dogsAnnotated = buildAnnotatedString {
+                                    dogsToday.forEachIndexed { i, dog ->
+                                        if (i > 0) withStyle(SpanStyle(color = Color(0xFF9E9E9E))) { append(", ") }
+                                        val isCurrent = inMonth || "${dog.client.dogName}|${dog.client.ownerName}" in currentMonthClientSet
+                                        withStyle(SpanStyle(
+                                            fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (isCurrent) Color.Black.copy(alpha = 0.82f) else Color(0xFFBDBDBD)
+                                        )) { append(dog.dogName) }
+                                    }
+                                }
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -2009,10 +2023,9 @@ private fun BoardingChartDialog(
                                                     RoundedCornerShape(2.dp)
                                                 )
                                         )
-                                        if (dogsText.isNotEmpty()) Text(
-                                            text = dogsText,
+                                        if (dogsAnnotated.isNotEmpty()) Text(
+                                            text = dogsAnnotated,
                                             fontSize = 9.sp,
-                                            color = Color.Black.copy(alpha = 0.82f),
                                             textAlign = TextAlign.End,
                                             maxLines = 1,
                                             overflow = TextOverflow.Clip,
@@ -2398,6 +2411,8 @@ internal fun BoardingTimeline(
                         val d = chartStart.plusDays(off.toLong())
                         if (d.monthValue == month && d.year == year) dogCountPerDay[off] else allDogCountPerDay[off]
                     }?.coerceAtLeast(1) ?: 1
+                    val currentMonthClientSet = intervals
+                        .map { "${it.client.dogName}|${it.client.ownerName}" }.toSet()
                     Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             for (offset in visibleOffsets) {
@@ -2423,7 +2438,16 @@ internal fun BoardingTimeline(
                                 val dogsToday   = srcIntervals
                                     .filter { !date.isBefore(it.actualStart) && !date.isAfter(it.actualEnd) }
                                     .sortedBy { it.actualStart }
-                                val dogsText    = dogsToday.joinToString(", ") { it.dogName }
+                                val dogsAnnotated = buildAnnotatedString {
+                                    dogsToday.forEachIndexed { i, dog ->
+                                        if (i > 0) withStyle(SpanStyle(color = Color(0xFF9E9E9E))) { append(", ") }
+                                        val isCurrent = inMonth || "${dog.client.dogName}|${dog.client.ownerName}" in currentMonthClientSet
+                                        withStyle(SpanStyle(
+                                            fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (isCurrent) Color.Black.copy(alpha = 0.82f) else Color(0xFFBDBDBD)
+                                        )) { append(dog.dogName) }
+                                    }
+                                }
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -2479,10 +2503,9 @@ internal fun BoardingTimeline(
                                                     RoundedCornerShape(2.dp)
                                                 )
                                         )
-                                        if (dogsText.isNotEmpty()) Text(
-                                            text = dogsText,
+                                        if (dogsAnnotated.isNotEmpty()) Text(
+                                            text = dogsAnnotated,
                                             fontSize = 9.sp,
-                                            color = Color.Black.copy(alpha = 0.82f),
                                             textAlign = TextAlign.End,
                                             maxLines = 1,
                                             overflow = TextOverflow.Clip,
