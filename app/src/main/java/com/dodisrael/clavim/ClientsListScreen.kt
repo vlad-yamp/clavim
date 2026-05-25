@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -1402,6 +1403,8 @@ private fun dogsPerDay(clients: List<ClientInfo>, month: Int, year: Int): List<I
     return counts.toList()
 }
 
+internal enum class TimelineChartType { TIMELINE, BAR }
+
 private fun dogWord(n: Int): String = when {
     n % 100 in 11..19 -> "собак"
     n % 10 == 1        -> "собака"
@@ -1575,7 +1578,8 @@ private fun BoardingChartDialog(
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .windowInsetsPadding(WindowInsets.navigationBars)
         ) {
-            var popupIdx by remember { mutableStateOf<Int?>(null) }
+            var popupIdx  by remember { mutableStateOf<Int?>(null) }
+            var chartType by remember { mutableStateOf(TimelineChartType.TIMELINE) }
             val dateFmt = remember { java.time.format.DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru")) }
 
             popupIdx?.let { idx ->
@@ -1652,14 +1656,38 @@ private fun BoardingChartDialog(
 
                 // Заголовок по центру
                 val n = intervals.size
-                Text(
-                    text = "${monthNames[month - 1]} $year — $n ${dogWord(n)}",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp)
-                )
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${monthNames[month - 1]} $year — $n ${dogWord(n)}",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Row(
+                        modifier = Modifier.align(Alignment.CenterStart),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Timeline,
+                            contentDescription = "Временная диаграмма",
+                            tint = if (chartType == TimelineChartType.TIMELINE) Color(0xFF388E3C) else Color(0xFFBDBDBD),
+                            modifier = Modifier.size(24.dp).clickable { chartType = TimelineChartType.TIMELINE }
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        Icon(
+                            imageVector = Icons.Default.BarChart,
+                            contentDescription = "По дням",
+                            tint = if (chartType == TimelineChartType.BAR) Color(0xFF388E3C) else Color(0xFFBDBDBD),
+                            modifier = Modifier.size(24.dp).clickable { chartType = TimelineChartType.BAR }
+                        )
+                    }
+                }
 
+                when (chartType) {
+                TimelineChartType.TIMELINE ->
                 Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                     Row(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
 
@@ -1861,6 +1889,88 @@ private fun BoardingChartDialog(
                     }
                     } // Row
                 } // Box verticalScroll (weight 1f)
+                TimelineChartType.BAR -> {
+                    val monthDays = monthStart.lengthOfMonth()
+                    val mOff      = (monthStart.toEpochDay() - chartStart.toEpochDay()).toInt()
+                    val maxCount  = (0 until monthDays).maxOfOrNull { dogCountPerDay[mOff + it] }?.coerceAtLeast(1) ?: 1
+                    Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            for (d in 1..monthDays) {
+                                val date        = monthStart.plusDays((d - 1).toLong())
+                                val isWeekend   = date.dayOfWeek.value >= 6
+                                val isToday     = date == today
+                                val count       = dogCountPerDay[mOff + d - 1]
+                                val label       = "%2d %s".format(date.dayOfMonth, dowLabels[date.dayOfWeek.value - 1])
+                                val countBg     = when {
+                                    count == 0 -> Color(0xFF4CAF50).copy(alpha = 0.25f)
+                                    count == 1 -> Color(0xFFFFEB3B).copy(alpha = 0.50f)
+                                    count == 2 -> Color(0xFF29B6F6).copy(alpha = 0.35f)
+                                    count == 3 -> Color(0xFFF48FB1).copy(alpha = 0.50f)
+                                    else       -> Color(0xFFEF5350).copy(alpha = 0.40f)
+                                }
+                                val barFraction = count.toFloat() / maxCount
+                                val dogsToday   = intervals
+                                    .filter { !date.isBefore(it.actualStart) && !date.isAfter(it.actualEnd) }
+                                    .sortedBy { it.actualStart }
+                                val dogsText    = dogsToday.joinToString(", ") { it.dogName }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(rowHeightDp)
+                                        .border(BorderStroke(0.3.dp, Color.Black.copy(alpha = 0.20f)))
+                                ) {
+                                    Box(
+                                        modifier = Modifier.width(dateColWidth).fillMaxHeight()
+                                            .background(if (isToday) Color(0xFF4CAF50).copy(alpha = 0.40f) else Color.Transparent),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        Text(label, fontSize = 10.sp,
+                                            color = when {
+                                                isToday   -> Color(0xFF1B5E20)
+                                                isWeekend -> Color(0xFFE53935)
+                                                else      -> Color(0xFF424242)
+                                            },
+                                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier.width(countColWidth).fillMaxHeight().background(countBg),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(count.toString(), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color.Black)
+                                    }
+                                    Spacer(Modifier.width(gap))
+                                    Box(
+                                        modifier = Modifier.weight(1f).fillMaxHeight()
+                                            .background(if (isToday) Color(0xFF4CAF50).copy(alpha = 0.12f) else Color.Transparent)
+                                    ) {
+                                        if (count > 0) Box(
+                                            modifier = Modifier
+                                                .align(Alignment.CenterStart)
+                                                .fillMaxWidth(barFraction)
+                                                .fillMaxHeight(0.75f)
+                                                .background(countBg, RoundedCornerShape(2.dp))
+                                        )
+                                        if (dogsText.isNotEmpty()) Text(
+                                            text = dogsText,
+                                            fontSize = 9.sp,
+                                            color = Color.Black.copy(alpha = 0.82f),
+                                            textAlign = TextAlign.End,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Clip,
+                                            modifier = Modifier
+                                                .align(Alignment.CenterEnd)
+                                                .fillMaxWidth()
+                                                .padding(end = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                } // when
             } // Column
             } // BoxWithConstraints
         } // Box fillMaxSize
@@ -1874,6 +1984,7 @@ internal fun BoardingTimeline(
     year: Int,
     photoCache: Map<String, String> = emptyMap(),
     showFullscreenButton: Boolean = false,
+    initialChartType: TimelineChartType = TimelineChartType.TIMELINE,
     modifier: Modifier = Modifier
 ) {
     val monthStart = remember(month, year) { LocalDate.of(year, month, 1) }
@@ -1904,6 +2015,7 @@ internal fun BoardingTimeline(
     val density     = LocalDensity.current
     var popupIdx    by remember { mutableStateOf<Int?>(null) }
     var isFullscreen by remember { mutableStateOf(false) }
+    var chartType   by remember { mutableStateOf(initialChartType) }
     val dateFmt = remember { java.time.format.DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru")) }
 
     if (isFullscreen) {
@@ -1924,6 +2036,7 @@ internal fun BoardingTimeline(
                     year                 = year,
                     photoCache           = photoCache,
                     showFullscreenButton = false,
+                    initialChartType     = chartType,
                     modifier             = Modifier.fillMaxSize()
                 )
             }
@@ -2013,6 +2126,24 @@ internal fun BoardingTimeline(
                         fontSize = 14.sp, fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center
                     )
+                    Row(
+                        modifier = Modifier.align(Alignment.CenterStart),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Timeline,
+                            contentDescription = "Временная диаграмма",
+                            tint = if (chartType == TimelineChartType.TIMELINE) Color(0xFF388E3C) else Color(0xFFBDBDBD),
+                            modifier = Modifier.size(24.dp).clickable { chartType = TimelineChartType.TIMELINE }
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        Icon(
+                            imageVector = Icons.Default.BarChart,
+                            contentDescription = "По дням",
+                            tint = if (chartType == TimelineChartType.BAR) Color(0xFF388E3C) else Color(0xFFBDBDBD),
+                            modifier = Modifier.size(24.dp).clickable { chartType = TimelineChartType.BAR }
+                        )
+                    }
                     if (showFullscreenButton) {
                         Icon(
                             imageVector = Icons.Default.Fullscreen,
@@ -2026,6 +2157,8 @@ internal fun BoardingTimeline(
                         )
                     }
                 }
+                when (chartType) {
+                TimelineChartType.TIMELINE ->
                 Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                     Row(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
                         Column(modifier = Modifier.width(dateColWidth)) {
@@ -2169,6 +2302,88 @@ internal fun BoardingTimeline(
                         }
                     }
                 }
+                TimelineChartType.BAR -> {
+                    val monthDays = monthStart.lengthOfMonth()
+                    val mOff      = (monthStart.toEpochDay() - chartStart.toEpochDay()).toInt()
+                    val maxCount  = (0 until monthDays).maxOfOrNull { dogCountPerDay[mOff + it] }?.coerceAtLeast(1) ?: 1
+                    Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            for (d in 1..monthDays) {
+                                val date        = monthStart.plusDays((d - 1).toLong())
+                                val isWeekend   = date.dayOfWeek.value >= 6
+                                val isToday     = date == today
+                                val count       = dogCountPerDay[mOff + d - 1]
+                                val label       = "%2d %s".format(date.dayOfMonth, dowLabels[date.dayOfWeek.value - 1])
+                                val countBg     = when {
+                                    count == 0 -> Color(0xFF4CAF50).copy(alpha = 0.25f)
+                                    count == 1 -> Color(0xFFFFEB3B).copy(alpha = 0.50f)
+                                    count == 2 -> Color(0xFF29B6F6).copy(alpha = 0.35f)
+                                    count == 3 -> Color(0xFFF48FB1).copy(alpha = 0.50f)
+                                    else       -> Color(0xFFEF5350).copy(alpha = 0.40f)
+                                }
+                                val barFraction = count.toFloat() / maxCount
+                                val dogsToday   = intervals
+                                    .filter { !date.isBefore(it.actualStart) && !date.isAfter(it.actualEnd) }
+                                    .sortedBy { it.actualStart }
+                                val dogsText    = dogsToday.joinToString(", ") { it.dogName }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(rowHeightDp)
+                                        .border(BorderStroke(0.3.dp, Color.Black.copy(alpha = 0.20f)))
+                                ) {
+                                    Box(
+                                        modifier = Modifier.width(dateColWidth).fillMaxHeight()
+                                            .background(if (isToday) Color(0xFF4CAF50).copy(alpha = 0.40f) else Color.Transparent),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        Text(label, fontSize = 10.sp,
+                                            color = when {
+                                                isToday   -> Color(0xFF1B5E20)
+                                                isWeekend -> Color(0xFFE53935)
+                                                else      -> Color(0xFF424242)
+                                            },
+                                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier.width(countColWidth).fillMaxHeight().background(countBg),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(count.toString(), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color.Black)
+                                    }
+                                    Spacer(Modifier.width(gap))
+                                    Box(
+                                        modifier = Modifier.weight(1f).fillMaxHeight()
+                                            .background(if (isToday) Color(0xFF4CAF50).copy(alpha = 0.12f) else Color.Transparent)
+                                    ) {
+                                        if (count > 0) Box(
+                                            modifier = Modifier
+                                                .align(Alignment.CenterStart)
+                                                .fillMaxWidth(barFraction)
+                                                .fillMaxHeight(0.75f)
+                                                .background(countBg, RoundedCornerShape(2.dp))
+                                        )
+                                        if (dogsText.isNotEmpty()) Text(
+                                            text = dogsText,
+                                            fontSize = 9.sp,
+                                            color = Color.Black.copy(alpha = 0.82f),
+                                            textAlign = TextAlign.End,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Clip,
+                                            modifier = Modifier
+                                                .align(Alignment.CenterEnd)
+                                                .fillMaxWidth()
+                                                .padding(end = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                } // when
             }
         }
     }
