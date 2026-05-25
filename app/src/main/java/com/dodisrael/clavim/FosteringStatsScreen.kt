@@ -408,6 +408,7 @@ private fun StatsBody(
                         clients              = allClients.filter {
                             clientHasBoardingInMonth(it, timelineMonth.first, timelineMonth.second)
                         },
+                        allClients           = allClients,
                         month                = timelineMonth.first,
                         year                 = timelineMonth.second,
                         photoCache           = photoCache,

@@ -380,6 +380,7 @@ fun ClientsListScreen(
         monthFilter?.let { (m, y) ->
             BoardingChartDialog(
                 clients = filteredClients,
+                allClients = clients,
                 month = m,
                 year = y,
                 photoCache = photoCache,
@@ -1531,6 +1532,7 @@ internal fun DogFaceLabel(number: Int, color: Color) {
 @Composable
 private fun BoardingChartDialog(
     clients: List<ClientInfo>,
+    allClients: List<ClientInfo> = clients,
     month: Int,
     year: Int,
     photoCache: Map<String, String> = emptyMap(),
@@ -1556,12 +1558,38 @@ private fun BoardingChartDialog(
             intervals.count { !date.isBefore(it.actualStart) && !date.isAfter(it.actualEnd) }
         }
     }
+    // Все интервалы всех собак в диапазоне chartStart..chartEnd — для имён во внемесячных строках
+    val allRangeIntervals = remember(allClients, chartStart, chartEnd) {
+        val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+        val dp  = Regex("""\d{2}\.\d{2}\.\d{4}""")
+        buildList<DogInterval> {
+            for (client in allClients) {
+                if (client.boardingHistory.isBlank()) continue
+                for (line in client.boardingHistory.lines()) {
+                    val t = line.trim(); if (t.isBlank()) continue
+                    val dates = dp.findAll(t).mapNotNull { m ->
+                        try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+                    }.toList()
+                    if (dates.size < 2) continue
+                    val s = dates.first(); val e = dates.last()
+                    if (!e.isBefore(chartStart) && !s.isAfter(chartEnd))
+                        add(DogInterval(client, s, e))
+                }
+            }
+        }.sortedWith(compareBy({ it.actualStart }, { it.actualEnd }))
+    }
 
     val monthNames = listOf("Январь","Февраль","Март","Апрель","Май","Июнь",
                             "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь")
     val monthAbbr  = listOf("Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек")
     val dowLabels  = listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
     val dogColors = DOG_COLORS
+    val allDogCountPerDay = remember(allRangeIntervals, chartStart, totalDays) {
+        IntArray(totalDays) { offset ->
+            val date = chartStart.plusDays(offset.toLong())
+            allRangeIntervals.count { !date.isBefore(it.actualStart) && !date.isAfter(it.actualEnd) }
+        }
+    }
 
     val rowHeightDp = 20.dp
     val chartHeight = rowHeightDp * totalDays
@@ -1890,18 +1918,30 @@ private fun BoardingChartDialog(
                     } // Row
                 } // Box verticalScroll (weight 1f)
                 TimelineChartType.BAR -> {
-                    val monthDays = monthStart.lengthOfMonth()
-                    val mOff      = (monthStart.toEpochDay() - chartStart.toEpochDay()).toInt()
-                    val maxCount  = (0 until monthDays).maxOfOrNull { dogCountPerDay[mOff + it] }?.coerceAtLeast(1) ?: 1
+                    val mOff = (monthStart.toEpochDay() - chartStart.toEpochDay()).toInt()
+                    val visibleOffsets = (0 until totalDays).filter { offset ->
+                        val date = chartStart.plusDays(offset.toLong())
+                        val inMonth = date.monthValue == month && date.year == year
+                        inMonth || allDogCountPerDay[offset] > 0
+                    }
+                    val maxCount = visibleOffsets.maxOfOrNull { off ->
+                        val d = chartStart.plusDays(off.toLong())
+                        if (d.monthValue == month && d.year == year) dogCountPerDay[off] else allDogCountPerDay[off]
+                    }?.coerceAtLeast(1) ?: 1
                     Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            for (d in 1..monthDays) {
-                                val date        = monthStart.plusDays((d - 1).toLong())
-                                val isWeekend   = date.dayOfWeek.value >= 6
-                                val isToday     = date == today
-                                val count       = dogCountPerDay[mOff + d - 1]
-                                val label       = "%2d %s".format(date.dayOfMonth, dowLabels[date.dayOfWeek.value - 1])
-                                val countBg     = when {
+                            for (offset in visibleOffsets) {
+                                val date      = chartStart.plusDays(offset.toLong())
+                                val inMonth   = date.monthValue == month && date.year == year
+                                val isWeekend = date.dayOfWeek.value >= 6
+                                val isToday   = date == today
+                                val count     = if (inMonth) dogCountPerDay[offset] else allDogCountPerDay[offset]
+                                val label = if (inMonth)
+                                    "%2d %s".format(date.dayOfMonth, dowLabels[date.dayOfWeek.value - 1])
+                                else
+                                    "%2d %s".format(date.dayOfMonth, monthAbbr[date.monthValue - 1])
+                                val countBg = when {
+                                    !inMonth   -> Color(0xFFF5F5F5)
                                     count == 0 -> Color(0xFF4CAF50).copy(alpha = 0.25f)
                                     count == 1 -> Color(0xFFFFEB3B).copy(alpha = 0.50f)
                                     count == 2 -> Color(0xFF29B6F6).copy(alpha = 0.35f)
@@ -1909,7 +1949,8 @@ private fun BoardingChartDialog(
                                     else       -> Color(0xFFEF5350).copy(alpha = 0.40f)
                                 }
                                 val barFraction = count.toFloat() / maxCount
-                                val dogsToday   = intervals
+                                val srcIntervals = if (inMonth) intervals else allRangeIntervals
+                                val dogsToday   = srcIntervals
                                     .filter { !date.isBefore(it.actualStart) && !date.isAfter(it.actualEnd) }
                                     .sortedBy { it.actualStart }
                                 val dogsText    = dogsToday.joinToString(", ") { it.dogName }
@@ -1921,12 +1962,17 @@ private fun BoardingChartDialog(
                                 ) {
                                     Box(
                                         modifier = Modifier.width(dateColWidth).fillMaxHeight()
-                                            .background(if (isToday) Color(0xFF4CAF50).copy(alpha = 0.40f) else Color.Transparent),
+                                            .background(when {
+                                                isToday  -> Color(0xFF4CAF50).copy(alpha = 0.40f)
+                                                !inMonth -> Color(0xFFF5F5F5)
+                                                else     -> Color.Transparent
+                                            }),
                                         contentAlignment = Alignment.CenterStart
                                     ) {
                                         Text(label, fontSize = 10.sp,
                                             color = when {
                                                 isToday   -> Color(0xFF1B5E20)
+                                                !inMonth  -> Color(0xFFBDBDBD)
                                                 isWeekend -> Color(0xFFE53935)
                                                 else      -> Color(0xFF424242)
                                             },
@@ -1935,22 +1981,33 @@ private fun BoardingChartDialog(
                                         )
                                     }
                                     Box(
-                                        modifier = Modifier.width(countColWidth).fillMaxHeight().background(countBg),
+                                        modifier = Modifier.width(countColWidth).fillMaxHeight()
+                                            .background(countBg),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text(count.toString(), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color.Black)
+                                        Text(
+                                            count.toString(), fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
+                                            color = if (inMonth) Color.Black else Color(0xFFBDBDBD)
+                                        )
                                     }
                                     Spacer(Modifier.width(gap))
                                     Box(
                                         modifier = Modifier.weight(1f).fillMaxHeight()
-                                            .background(if (isToday) Color(0xFF4CAF50).copy(alpha = 0.12f) else Color.Transparent)
+                                            .background(when {
+                                                isToday  -> Color(0xFF4CAF50).copy(alpha = 0.12f)
+                                                !inMonth -> Color(0xFFF5F5F5)
+                                                else     -> Color.Transparent
+                                            })
                                     ) {
                                         if (count > 0) Box(
                                             modifier = Modifier
                                                 .align(Alignment.CenterStart)
                                                 .fillMaxWidth(barFraction)
                                                 .fillMaxHeight(0.75f)
-                                                .background(countBg, RoundedCornerShape(2.dp))
+                                                .background(
+                                                    if (inMonth) countBg else Color(0xFFBDBDBD).copy(alpha = 0.50f),
+                                                    RoundedCornerShape(2.dp)
+                                                )
                                         )
                                         if (dogsText.isNotEmpty()) Text(
                                             text = dogsText,
@@ -1980,6 +2037,7 @@ private fun BoardingChartDialog(
 @Composable
 internal fun BoardingTimeline(
     clients: List<ClientInfo>,
+    allClients: List<ClientInfo> = clients,
     month: Int,
     year: Int,
     photoCache: Map<String, String> = emptyMap(),
@@ -2006,10 +2064,36 @@ internal fun BoardingTimeline(
             intervals.count { !date.isBefore(it.actualStart) && !date.isAfter(it.actualEnd) }
         }
     }
+    // Все интервалы всех собак в диапазоне chartStart..chartEnd — для имён во внемесячных строках
+    val allRangeIntervals = remember(allClients, chartStart, chartEnd) {
+        val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+        val dp  = Regex("""\d{2}\.\d{2}\.\d{4}""")
+        buildList<DogInterval> {
+            for (client in allClients) {
+                if (client.boardingHistory.isBlank()) continue
+                for (line in client.boardingHistory.lines()) {
+                    val t = line.trim(); if (t.isBlank()) continue
+                    val dates = dp.findAll(t).mapNotNull { m ->
+                        try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+                    }.toList()
+                    if (dates.size < 2) continue
+                    val s = dates.first(); val e = dates.last()
+                    if (!e.isBefore(chartStart) && !s.isAfter(chartEnd))
+                        add(DogInterval(client, s, e))
+                }
+            }
+        }.sortedWith(compareBy({ it.actualStart }, { it.actualEnd }))
+    }
     val monthNames = listOf("Январь","Февраль","Март","Апрель","Май","Июнь",
                             "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь")
     val monthAbbr  = listOf("Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек")
     val dowLabels  = listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
+    val allDogCountPerDay = remember(allRangeIntervals, chartStart, totalDays) {
+        IntArray(totalDays) { offset ->
+            val date = chartStart.plusDays(offset.toLong())
+            allRangeIntervals.count { !date.isBefore(it.actualStart) && !date.isAfter(it.actualEnd) }
+        }
+    }
     val rowHeightDp = 20.dp
     val chartHeight = rowHeightDp * totalDays
     val density     = LocalDensity.current
@@ -2032,6 +2116,7 @@ internal fun BoardingTimeline(
             ) {
                 BoardingTimeline(
                     clients              = clients,
+                    allClients           = allClients,
                     month                = month,
                     year                 = year,
                     photoCache           = photoCache,
@@ -2303,18 +2388,30 @@ internal fun BoardingTimeline(
                     }
                 }
                 TimelineChartType.BAR -> {
-                    val monthDays = monthStart.lengthOfMonth()
-                    val mOff      = (monthStart.toEpochDay() - chartStart.toEpochDay()).toInt()
-                    val maxCount  = (0 until monthDays).maxOfOrNull { dogCountPerDay[mOff + it] }?.coerceAtLeast(1) ?: 1
+                    val mOff = (monthStart.toEpochDay() - chartStart.toEpochDay()).toInt()
+                    val visibleOffsets = (0 until totalDays).filter { offset ->
+                        val date = chartStart.plusDays(offset.toLong())
+                        val inMonth = date.monthValue == month && date.year == year
+                        inMonth || allDogCountPerDay[offset] > 0
+                    }
+                    val maxCount = visibleOffsets.maxOfOrNull { off ->
+                        val d = chartStart.plusDays(off.toLong())
+                        if (d.monthValue == month && d.year == year) dogCountPerDay[off] else allDogCountPerDay[off]
+                    }?.coerceAtLeast(1) ?: 1
                     Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            for (d in 1..monthDays) {
-                                val date        = monthStart.plusDays((d - 1).toLong())
-                                val isWeekend   = date.dayOfWeek.value >= 6
-                                val isToday     = date == today
-                                val count       = dogCountPerDay[mOff + d - 1]
-                                val label       = "%2d %s".format(date.dayOfMonth, dowLabels[date.dayOfWeek.value - 1])
-                                val countBg     = when {
+                            for (offset in visibleOffsets) {
+                                val date      = chartStart.plusDays(offset.toLong())
+                                val inMonth   = date.monthValue == month && date.year == year
+                                val isWeekend = date.dayOfWeek.value >= 6
+                                val isToday   = date == today
+                                val count     = if (inMonth) dogCountPerDay[offset] else allDogCountPerDay[offset]
+                                val label = if (inMonth)
+                                    "%2d %s".format(date.dayOfMonth, dowLabels[date.dayOfWeek.value - 1])
+                                else
+                                    "%2d %s".format(date.dayOfMonth, monthAbbr[date.monthValue - 1])
+                                val countBg = when {
+                                    !inMonth   -> Color(0xFFF5F5F5)
                                     count == 0 -> Color(0xFF4CAF50).copy(alpha = 0.25f)
                                     count == 1 -> Color(0xFFFFEB3B).copy(alpha = 0.50f)
                                     count == 2 -> Color(0xFF29B6F6).copy(alpha = 0.35f)
@@ -2322,7 +2419,8 @@ internal fun BoardingTimeline(
                                     else       -> Color(0xFFEF5350).copy(alpha = 0.40f)
                                 }
                                 val barFraction = count.toFloat() / maxCount
-                                val dogsToday   = intervals
+                                val srcIntervals = if (inMonth) intervals else allRangeIntervals
+                                val dogsToday   = srcIntervals
                                     .filter { !date.isBefore(it.actualStart) && !date.isAfter(it.actualEnd) }
                                     .sortedBy { it.actualStart }
                                 val dogsText    = dogsToday.joinToString(", ") { it.dogName }
@@ -2334,12 +2432,17 @@ internal fun BoardingTimeline(
                                 ) {
                                     Box(
                                         modifier = Modifier.width(dateColWidth).fillMaxHeight()
-                                            .background(if (isToday) Color(0xFF4CAF50).copy(alpha = 0.40f) else Color.Transparent),
+                                            .background(when {
+                                                isToday  -> Color(0xFF4CAF50).copy(alpha = 0.40f)
+                                                !inMonth -> Color(0xFFF5F5F5)
+                                                else     -> Color.Transparent
+                                            }),
                                         contentAlignment = Alignment.CenterStart
                                     ) {
                                         Text(label, fontSize = 10.sp,
                                             color = when {
                                                 isToday   -> Color(0xFF1B5E20)
+                                                !inMonth  -> Color(0xFFBDBDBD)
                                                 isWeekend -> Color(0xFFE53935)
                                                 else      -> Color(0xFF424242)
                                             },
@@ -2348,22 +2451,33 @@ internal fun BoardingTimeline(
                                         )
                                     }
                                     Box(
-                                        modifier = Modifier.width(countColWidth).fillMaxHeight().background(countBg),
+                                        modifier = Modifier.width(countColWidth).fillMaxHeight()
+                                            .background(countBg),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text(count.toString(), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color.Black)
+                                        Text(
+                                            count.toString(), fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
+                                            color = if (inMonth) Color.Black else Color(0xFFBDBDBD)
+                                        )
                                     }
                                     Spacer(Modifier.width(gap))
                                     Box(
                                         modifier = Modifier.weight(1f).fillMaxHeight()
-                                            .background(if (isToday) Color(0xFF4CAF50).copy(alpha = 0.12f) else Color.Transparent)
+                                            .background(when {
+                                                isToday  -> Color(0xFF4CAF50).copy(alpha = 0.12f)
+                                                !inMonth -> Color(0xFFF5F5F5)
+                                                else     -> Color.Transparent
+                                            })
                                     ) {
                                         if (count > 0) Box(
                                             modifier = Modifier
                                                 .align(Alignment.CenterStart)
                                                 .fillMaxWidth(barFraction)
                                                 .fillMaxHeight(0.75f)
-                                                .background(countBg, RoundedCornerShape(2.dp))
+                                                .background(
+                                                    if (inMonth) countBg else Color(0xFFBDBDBD).copy(alpha = 0.50f),
+                                                    RoundedCornerShape(2.dp)
+                                                )
                                         )
                                         if (dogsText.isNotEmpty()) Text(
                                             text = dogsText,
