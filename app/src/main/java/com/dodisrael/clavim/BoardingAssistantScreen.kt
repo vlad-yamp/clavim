@@ -1119,6 +1119,7 @@ private fun ExistingDogFormDialog(
     var clientDogs      by remember { mutableStateOf<List<ClientDog>>(emptyList()) }
     var isLoadingDogs   by remember { mutableStateOf(true) }
     var boardingPhotoUrl by remember { mutableStateOf(initialPhotoUrl) }
+    var validationError  by remember { mutableStateOf("") }
 
     LaunchedEffect(dogName, clarification, isLoadingDogs) {
         if (dogName.isBlank() || isLoadingDogs) return@LaunchedEffect
@@ -1291,12 +1292,31 @@ private fun ExistingDogFormDialog(
             }
         },
         confirmButton = {
-            Button(
-                onClick = { onConfirm(dogName, clarification, startDateStr, endDateStr) },
-                colors = if (isDelete) ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
-                         else ButtonDefaults.buttonColors()
-            ) {
-                Text(if (isDelete) "Удалить" else "Записать")
+            Column(horizontalAlignment = Alignment.End) {
+                if (validationError.isNotEmpty()) {
+                    Text(
+                        text = validationError,
+                        color = Color(0xFFD32F2F),
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
+                Button(
+                    onClick = {
+                        validationError = when {
+                            dogName.isBlank()                              -> "Введите кличку собаки"
+                            startDateStr.isBlank() || endDateStr.isBlank() -> "Выберите даты передержки"
+                            else                                           -> ""
+                        }
+                        if (validationError.isEmpty())
+                            onConfirm(dogName, clarification, startDateStr, endDateStr)
+                    },
+                    colors = if (isDelete) ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+                             else ButtonDefaults.buttonColors()
+                ) {
+                    Text(if (isDelete) "Удалить" else "Записать")
+                }
             }
         },
         dismissButton = {
@@ -1322,7 +1342,8 @@ private fun NewDogFormDialog(
     var phone         by remember { mutableStateOf("") }
     var startDateStr  by remember { mutableStateOf(startDate) }
     var endDateStr    by remember { mutableStateOf(endDate) }
-    var showDatePicker by remember { mutableStateOf(false) }
+    var showDatePicker  by remember { mutableStateOf(false) }
+    var validationError by remember { mutableStateOf("") }
     val context = LocalContext.current
 
     if (showDatePicker) {
@@ -1427,8 +1448,31 @@ private fun NewDogFormDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(dogName, breed, owner, phone, startDateStr, endDateStr) }) {
-                Text("Продолжить")
+            Column(horizontalAlignment = Alignment.End) {
+                if (validationError.isNotEmpty()) {
+                    Text(
+                        text = validationError,
+                        color = Color(0xFFD32F2F),
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
+                Button(
+                    onClick = {
+                        validationError = when {
+                            dogName.isBlank()                              -> "Введите кличку собаки"
+                            breed.isBlank()                                -> "Введите породу"
+                            owner.isBlank()                                -> "Введите имя хозяина"
+                            startDateStr.isBlank() || endDateStr.isBlank() -> "Выберите даты передержки"
+                            else                                           -> ""
+                        }
+                        if (validationError.isEmpty())
+                            onConfirm(dogName, breed, owner, phone, startDateStr, endDateStr)
+                    }
+                ) {
+                    Text("Продолжить")
+                }
             }
         },
         dismissButton = {
