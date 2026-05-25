@@ -1611,7 +1611,8 @@ private fun BoardingChartDialog(
         ) {
             var popupIdx  by remember { mutableStateOf<Int?>(null) }
             var chartType by remember { mutableStateOf(TimelineChartType.TIMELINE) }
-            var showBreed by remember { mutableStateOf(false) }
+            var showBreed    by remember { mutableStateOf(false) }
+            var barPopupDate by remember { mutableStateOf<LocalDate?>(null) }
             val dateFmt = remember { java.time.format.DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru")) }
 
             popupIdx?.let { idx ->
@@ -1673,6 +1674,16 @@ private fun BoardingChartDialog(
                         }
                     }
                 }
+            }
+
+            barPopupDate?.let { popupDate ->
+                val popupInMonth = popupDate.monthValue == month && popupDate.year == year
+                val popupSrc = if (popupInMonth) intervals else allRangeIntervals
+                val popupDogs = popupSrc
+                    .filter { !popupDate.isBefore(it.actualStart) && !popupDate.isAfter(it.actualEnd) }
+                    .sortedBy { it.actualStart }
+                if (popupDogs.isNotEmpty())
+                    BarDayPopup(popupDate, popupDogs, photoCache, dateFmt, monthNames) { barPopupDate = null }
             }
 
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -1996,6 +2007,7 @@ private fun BoardingChartDialog(
                                         .fillMaxWidth()
                                         .height(rowHeightDp)
                                         .border(BorderStroke(0.3.dp, Color.Black.copy(alpha = 0.20f)))
+                                        .clickable { if (count > 0) barPopupDate = date }
                                 ) {
                                     Box(
                                         modifier = Modifier.width(dateColWidth).fillMaxHeight()
@@ -2137,7 +2149,8 @@ internal fun BoardingTimeline(
     var popupIdx    by remember { mutableStateOf<Int?>(null) }
     var isFullscreen by remember { mutableStateOf(false) }
     var chartType   by remember { mutableStateOf(initialChartType) }
-    var showBreed   by remember { mutableStateOf(initialShowBreed) }
+    var showBreed    by remember { mutableStateOf(initialShowBreed) }
+    var barPopupDate by remember { mutableStateOf<LocalDate?>(null) }
     val dateFmt = remember { java.time.format.DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru")) }
 
     if (isFullscreen) {
@@ -2219,6 +2232,16 @@ internal fun BoardingTimeline(
                 }
             }
         }
+    }
+
+    barPopupDate?.let { popupDate ->
+        val popupInMonth = popupDate.monthValue == month && popupDate.year == year
+        val popupSrc = if (popupInMonth) intervals else allRangeIntervals
+        val popupDogs = popupSrc
+            .filter { !popupDate.isBefore(it.actualStart) && !popupDate.isAfter(it.actualEnd) }
+            .sortedBy { it.actualStart }
+        if (popupDogs.isNotEmpty())
+            BarDayPopup(popupDate, popupDogs, photoCache, dateFmt, monthNames) { barPopupDate = null }
     }
 
     BoxWithConstraints(modifier = modifier) {
@@ -2504,6 +2527,7 @@ internal fun BoardingTimeline(
                                         .fillMaxWidth()
                                         .height(rowHeightDp)
                                         .border(BorderStroke(0.3.dp, Color.Black.copy(alpha = 0.20f)))
+                                        .clickable { if (count > 0) barPopupDate = date }
                                 ) {
                                     Box(
                                         modifier = Modifier.width(dateColWidth).fillMaxHeight()
@@ -2572,6 +2596,76 @@ internal fun BoardingTimeline(
                     }
                 }
                 } // when
+            }
+        }
+    }
+}
+
+@Composable
+private fun BarDayPopup(
+    date: LocalDate,
+    dogsOnDay: List<DogInterval>,
+    photoCache: Map<String, String>,
+    dateFmt: DateTimeFormatter,
+    monthNames: List<String>,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            elevation = CardDefaults.cardElevation(8.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column {
+                Box(
+                    modifier = Modifier.fillMaxWidth()
+                        .background(Color(0xFF388E3C))
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "${date.dayOfMonth} ${monthNames[date.monthValue - 1].lowercase()} ${date.year}",
+                        color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp
+                    )
+                }
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    dogsOnDay.forEachIndexed { i, iv ->
+                        if (i > 0) Box(Modifier.fillMaxWidth().height(0.5.dp).background(Color(0xFFE0E0E0)))
+                        val client   = iv.client
+                        val color    = DOG_COLORS[i % DOG_COLORS.size]
+                        val photoUrl = photoCache[clientPhotoKey(client)]
+                        Row(
+                            modifier = Modifier.padding(12.dp).height(IntrinsicSize.Max),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Box(modifier = Modifier.width(3.dp).fillMaxHeight().background(color))
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(client.dogName, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                if (client.ownerName.isNotBlank())
+                                    Text(client.ownerName, fontSize = 13.sp, color = Color(0xFF424242))
+                                if (client.breed.isNotBlank())
+                                    Text(client.breed, fontSize = 12.sp, color = Color(0xFF757575))
+                                if (client.phone.isNotBlank())
+                                    Text(client.phone, fontSize = 13.sp, color = Color(0xFF1565C0))
+                                Text(
+                                    "${iv.actualStart.format(dateFmt)} — ${iv.actualEnd.format(dateFmt)}",
+                                    fontSize = 12.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.Medium
+                                )
+                            }
+                            if (photoUrl?.isNotBlank() == true) {
+                                Spacer(Modifier.width(10.dp))
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(photoUrl).crossfade(true).build(),
+                                    contentDescription = null,
+                                    modifier = Modifier.width(90.dp).border(1.5.dp, Color(0xFF0D2B5E)),
+                                    contentScale = ContentScale.FillWidth
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
