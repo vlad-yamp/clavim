@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RateReview
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -71,5 +72,8 @@ private fun buildAdvertisingMenuItems(onWebViewClick: (url: String, title: Strin
     MenuItem("Поиск в\nинтернете", Icons.Default.Search, Color(0xFF0F9D58)) { _ ->
         val query = Uri.encode("Дрессировка собак Хайфа")
         onWebViewClick("https://www.google.com/search?q=$query", "Поиск в интернете")
+    },
+    MenuItem("Наш сайт", Icons.Default.Language, Color(0xFF1565C0)) { _ ->
+        onWebViewClick("https://dogisrael.com", "Наш сайт")
     }
 )

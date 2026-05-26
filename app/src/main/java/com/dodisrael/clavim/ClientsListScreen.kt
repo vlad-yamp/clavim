@@ -2217,7 +2217,7 @@ internal fun BoardingTimeline(
                         add(DogInterval(client, s, e))
                 }
             }
-        }.sortedWith(compareBy({ it.actualStart }, { it.actualEnd }))
+        }.sortedWith(compareBy({ iCghfdft.actualStart }, { it.actualEnd }))
     }
     val monthNames = listOf("Январь","Февраль","Март","Апрель","Май","Июнь",
                             "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь")

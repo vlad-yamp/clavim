@@ -81,6 +81,7 @@ fun AppContent() {
     BackHandler(enabled = screen != Screen.MAIN) {
         screen = when (screen) {
             Screen.EXCHANGE_RATES, Screen.ADDRESSES, Screen.DATA_ENTRIES, Screen.BALANCE -> Screen.INFO
+            Screen.TRAINING -> Screen.MAIN
             Screen.TELEGRAM_FOSTERING -> Screen.TELEGRAM
             Screen.WHATSAPP_REMINDER, Screen.WHATSAPP_HOMEWORK, Screen.WHATSAPP_DOG_MESSAGE,
             Screen.WHATSAPP_TRANSLATION, Screen.WHATSAPP_PICKUP -> Screen.WHATSAPP
@@ -157,6 +158,7 @@ fun AppContent() {
             onTelegramFosteringClick = { screen = Screen.TELEGRAM_FOSTERING }
         )
         Screen.SETTINGS            -> SettingsScreen(onBack = { screen = Screen.MAIN })
+        Screen.TRAINING            -> TrainingScreen(onBack = { screen = Screen.MAIN })
         Screen.MAIN                -> MainMenuScreen(
             onSheetsClick              = { screen = Screen.SHEETS },
             onInfoClick                = { screen = Screen.INFO },
@@ -166,6 +168,7 @@ fun AppContent() {
             onWebViewClick             = { url, title -> openWebView(url, title, Screen.MAIN) },
             onBoardingAssistantClick   = { boardingReturnScreen = Screen.MAIN; screen = Screen.BOARDING_ASSISTANT },
             onFosteringClick           = { screen = Screen.FOSTERING_MENU },
+            onTrainingClick            = { screen = Screen.TRAINING },
             onSettingsClick            = { screen = Screen.SETTINGS }
         )
         Screen.FOSTERING_MENU      -> FosteringMenuScreen(
