@@ -30,7 +30,9 @@
       "Bash(xargs grep -l -i \"foster\")",
       "Bash(xargs grep -l \"class.*Repository\\\\|interface.*Repository\")",
       "Bash(./gradlew compileDebugKotlin --stacktrace)",
-      "Bash(./gradlew compileDebugKotlin --info)"
+      "Bash(./gradlew compileDebugKotlin --info)",
+      "Bash(Get-ChildItem -Recurse -Directory)",
+      "Bash(Select-Object -First 20 FullName)"
     ]
   }
 }

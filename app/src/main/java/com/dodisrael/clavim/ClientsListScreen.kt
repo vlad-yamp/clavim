@@ -262,7 +262,9 @@ fun ClientsListScreen(
         val c = galleryClient ?: return@LaunchedEffect
         galleryPhotos = null
         val apiKey = prefs.getString("openai_api_key", "") ?: ""
-        val photos = findAllClientPhotos(context, c, apiKey)
+        val uniqueOwners = clients.groupBy { it.dogName.lowercase() }[c.dogName.lowercase()]
+            ?.distinctBy { it.ownerName.lowercase() }?.size ?: 1
+        val photos = findAllClientPhotos(context, c, uniqueOwners, apiKey)
         if (photos.isEmpty()) {
             galleryClient = null
             galleryPhotos = null
@@ -1220,20 +1222,34 @@ private suspend fun findClientPhoto(
         val posts = filterFosteringPosts(raw, apiKey, client.dogName)
         if (posts.isEmpty()) return@withContext null
         if (uniqueOwnerCount <= 1) return@withContext posts.firstOrNull()?.photoUrl
-        if (client.lastBoarding.isBlank()) return@withContext posts.firstOrNull()?.photoUrl
-        val range = parsePastBoardingRange(client.lastBoarding, client.lastBoardingMonth)
-            ?: return@withContext posts.firstOrNull()?.photoUrl
         val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
-        val startDate = try { LocalDate.parse(range.first, fmt) } catch (_: Exception) {
-            return@withContext posts.firstOrNull()?.photoUrl
+        val datePattern = Regex("""\d{2}\.\d{2}\.\d{4}""")
+        // Collect all boarding intervals from full history
+        val intervals = mutableListOf<Pair<LocalDate, LocalDate>>()
+        if (client.boardingHistory.isNotBlank()) {
+            for (line in client.boardingHistory.lines()) {
+                val trimmed = line.trim()
+                if (trimmed.isBlank()) continue
+                val dates = datePattern.findAll(trimmed).mapNotNull { m ->
+                    try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+                }.toList()
+                if (dates.size >= 2) intervals.add(dates[0] to dates[1])
+            }
         }
-        val endDate = try { LocalDate.parse(range.second, fmt) } catch (_: Exception) {
-            return@withContext posts.firstOrNull()?.photoUrl
+        // Fall back to lastBoarding if boardingHistory is empty
+        if (intervals.isEmpty() && client.lastBoarding.isNotBlank()) {
+            val range = parsePastBoardingRange(client.lastBoarding, client.lastBoardingMonth)
+            if (range != null) {
+                val s = try { LocalDate.parse(range.first, fmt) } catch (_: Exception) { null }
+                val e = try { LocalDate.parse(range.second, fmt) } catch (_: Exception) { null }
+                if (s != null && e != null) intervals.add(s to e)
+            }
         }
+        if (intervals.isEmpty()) return@withContext posts.firstOrNull()?.photoUrl
         posts.firstOrNull { post ->
             if (post.date.isBlank()) return@firstOrNull false
             val d = try { LocalDate.parse(post.date, fmt) } catch (_: Exception) { return@firstOrNull false }
-            !d.isBefore(startDate) && !d.isAfter(endDate)
+            intervals.any { (start, end) -> !d.isBefore(start) && !d.isAfter(end) }
         }?.photoUrl ?: posts.firstOrNull()?.photoUrl
     } catch (_: Exception) { null }
 }
@@ -1241,13 +1257,45 @@ private suspend fun findClientPhoto(
 private suspend fun findAllClientPhotos(
     context: Context,
     client: ClientInfo,
+    uniqueOwnerCount: Int,
     apiKey: String
 ): List<String> = withContext(Dispatchers.IO) {
     try {
         val raw = FosteringDatabase.get(context).dao().search(client.dogName)
         if (raw.isEmpty()) return@withContext emptyList()
         val posts = filterFosteringPosts(raw, apiKey, client.dogName)
-        posts.mapNotNull { it.photoUrl.takeIf { u -> u.isNotBlank() } }
+        if (uniqueOwnerCount <= 1) {
+            return@withContext posts.mapNotNull { it.photoUrl.takeIf { u -> u.isNotBlank() } }
+        }
+        val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+        val datePattern = Regex("""\d{2}\.\d{2}\.\d{4}""")
+        val intervals = mutableListOf<Pair<LocalDate, LocalDate>>()
+        if (client.boardingHistory.isNotBlank()) {
+            for (line in client.boardingHistory.lines()) {
+                val trimmed = line.trim()
+                if (trimmed.isBlank()) continue
+                val dates = datePattern.findAll(trimmed).mapNotNull { m ->
+                    try { LocalDate.parse(m.value, fmt) } catch (_: Exception) { null }
+                }.toList()
+                if (dates.size >= 2) intervals.add(dates[0] to dates[1])
+            }
+        }
+        if (intervals.isEmpty() && client.lastBoarding.isNotBlank()) {
+            val range = parsePastBoardingRange(client.lastBoarding, client.lastBoardingMonth)
+            if (range != null) {
+                val s = try { LocalDate.parse(range.first, fmt) } catch (_: Exception) { null }
+                val e = try { LocalDate.parse(range.second, fmt) } catch (_: Exception) { null }
+                if (s != null && e != null) intervals.add(s to e)
+            }
+        }
+        if (intervals.isEmpty()) {
+            return@withContext posts.mapNotNull { it.photoUrl.takeIf { u -> u.isNotBlank() } }
+        }
+        posts.filter { post ->
+            if (post.date.isBlank()) return@filter false
+            val d = try { LocalDate.parse(post.date, fmt) } catch (_: Exception) { return@filter false }
+            intervals.any { (start, end) -> !d.isBefore(start) && !d.isAfter(end) }
+        }.mapNotNull { it.photoUrl.takeIf { u -> u.isNotBlank() } }
     } catch (_: Exception) { emptyList() }
 }
 
