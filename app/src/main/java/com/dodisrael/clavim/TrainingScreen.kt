@@ -213,12 +213,14 @@ fun TrainingScreen(onBack: () -> Unit) {
     var isLoading by remember { mutableStateOf(true) }
     var error     by remember { mutableStateOf("") }
 
-    var monthFrom by remember { mutableStateOf<YearMonth?>(null) }
-    var monthTo   by remember { mutableStateOf<YearMonth?>(null) }
-    var groupBy1  by remember { mutableStateOf(GroupField.NONE) }
-    var groupBy2  by remember { mutableStateOf(GroupField.NONE) }
-    var valueType by remember { mutableStateOf(ValueType.COUNT) }
-    var showChart by remember { mutableStateOf(false) }
+    var monthFrom   by remember { mutableStateOf<YearMonth?>(null) }
+    var monthTo     by remember { mutableStateOf<YearMonth?>(null) }
+    var groupBy1    by remember { mutableStateOf(GroupField.NONE) }
+    var groupBy2    by remember { mutableStateOf(GroupField.NONE) }
+    var valueType   by remember { mutableStateOf(ValueType.COUNT) }
+    var showChart   by remember { mutableStateOf(false) }
+    var filterField by remember { mutableStateOf(GroupField.NONE) }
+    var filterValue by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         // Phase 1: show cache immediately so the screen feels instant
@@ -270,9 +272,22 @@ fun TrainingScreen(onBack: () -> Unit) {
         }
     }
 
-    val groupedData = remember(filteredRows, groupBy1, groupBy2, valueType) {
+    val filterFieldValues = remember(filteredRows, filterField) {
+        if (filterField == GroupField.NONE) emptyList()
+        else filteredRows.map { getGroupKey(filterField, it) }
+            .distinctBy { it.sort }
+            .sortedBy { it.sort }
+    }
+
+    val displayRows = remember(filteredRows, filterField, filterValue) {
+        val fv = filterValue
+        if (filterField == GroupField.NONE || fv == null) filteredRows
+        else filteredRows.filter { row -> getGroupKey(filterField, row).sort == fv }
+    }
+
+    val groupedData = remember(displayRows, groupBy1, groupBy2, valueType) {
         if (groupBy1 == GroupField.NONE) emptyList()
-        else computeGrouped(filteredRows, groupBy1, groupBy2, valueType)
+        else computeGrouped(displayRows, groupBy1, groupBy2, valueType)
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -290,13 +305,29 @@ fun TrainingScreen(onBack: () -> Unit) {
                     TrMonthRangePicker(availableMonths, monthFrom, monthTo,
                         onFromChange = { monthFrom = it }, onToChange = { monthTo = it })
 
-                    TrGroupDropdown("Группировать по", groupBy1, Modifier.fillMaxWidth()) {
-                        groupBy1 = it
-                        if (it == GroupField.NONE) { groupBy2 = GroupField.NONE; showChart = false }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TrGroupDropdown(
+                            "Параметр", filterField,
+                            if (filterField == GroupField.NONE) Modifier.fillMaxWidth() else Modifier.weight(1f)
+                        ) { filterField = it; filterValue = null }
+                        if (filterField != GroupField.NONE) {
+                            TrFilterValueDropdown(
+                                "Значение", filterValue, filterFieldValues, Modifier.weight(1f)
+                            ) { filterValue = it }
+                        }
                     }
 
-                    AnimatedVisibility(visible = groupBy1 != GroupField.NONE) {
-                        TrGroupDropdown("Затем по", groupBy2, Modifier.fillMaxWidth()) { groupBy2 = it }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TrGroupDropdown(
+                            "Группировать по", groupBy1,
+                            if (groupBy1 == GroupField.NONE) Modifier.fillMaxWidth() else Modifier.weight(1f)
+                        ) {
+                            groupBy1 = it
+                            if (it == GroupField.NONE) { groupBy2 = GroupField.NONE; showChart = false }
+                        }
+                        if (groupBy1 != GroupField.NONE) {
+                            TrGroupDropdown("Затем по", groupBy2, Modifier.weight(1f)) { groupBy2 = it }
+                        }
                     }
 
                     // Value type chips + chart toggle
@@ -347,7 +378,7 @@ fun TrainingScreen(onBack: () -> Unit) {
                 error.isNotBlank() -> Box(
                     Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center
                 ) { Text(error, color = Color(0xFFC62828), textAlign = TextAlign.Center) }
-                groupBy1 == GroupField.NONE -> TrRawTable(filteredRows, dateFmt)
+                groupBy1 == GroupField.NONE -> TrRawTable(displayRows, dateFmt)
                 showChart -> TrGroupedChart(groupedData, groupBy1, groupBy2, valueType)
                 else -> TrGroupedTable(groupedData, groupBy1, groupBy2, valueType)
             }
@@ -427,6 +458,36 @@ private fun TrGroupDropdown(
             GroupField.values().forEach { field ->
                 DropdownMenuItem(text = { Text(field.label, fontSize = 14.sp) },
                     onClick = { onSelected(field); expanded = false })
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TrFilterValueDropdown(
+    label: String,
+    selected: String?,
+    options: List<GKey>,
+    modifier: Modifier = Modifier,
+    onSelected: (String?) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val displayText = options.find { it.sort == selected }?.display ?: "Все"
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
+        OutlinedTextField(
+            value = displayText, onValueChange = {}, readOnly = true,
+            label = { Text(label, fontSize = 11.sp) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth(),
+            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp), singleLine = true
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(text = { Text("Все", fontSize = 14.sp) },
+                onClick = { onSelected(null); expanded = false })
+            options.forEach { key ->
+                DropdownMenuItem(text = { Text(key.display, fontSize = 14.sp) },
+                    onClick = { onSelected(key.sort); expanded = false })
             }
         }
     }
