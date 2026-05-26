@@ -99,6 +99,8 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
     var fullScreenPhotoIndex by remember { mutableStateOf<Int?>(null) }
     var showDogPicker by remember { mutableStateOf(false) }
 
+    val photoPrefs = remember { context.getSharedPreferences("clients_photo_cache", android.content.Context.MODE_PRIVATE) }
+
     LaunchedEffect(Unit) {
         val count = withContext(Dispatchers.IO) { FosteringDatabase.get(context).dao().countPosts() }
         if (count == 0) {
@@ -108,6 +110,7 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
             isAutoSyncing = true
             syncFosteringChannel(context, incremental = true, onProgress = {})
             val newCount = withContext(Dispatchers.IO) { FosteringDatabase.get(context).dao().countPosts() }
+            if (newCount > count) photoPrefs.edit().clear().apply()
             syncState = SyncState.Ready(newCount)
             isAutoSyncing = false
         }
@@ -117,10 +120,12 @@ fun TelegramFosteringScreen(onBack: () -> Unit) {
         syncState = SyncState.Syncing(0, incremental)
         searchResults = null
         scope.launch {
+            val countBefore = withContext(Dispatchers.IO) { FosteringDatabase.get(context).dao().countPosts() }
             val error = syncFosteringChannel(context, incremental) { page ->
                 syncState = SyncState.Syncing(page, incremental)
             }
             val count = withContext(Dispatchers.IO) { FosteringDatabase.get(context).dao().countPosts() }
+            if (error == null && (!incremental || count > countBefore)) photoPrefs.edit().clear().apply()
             syncState = if (error != null) SyncState.SyncError(error) else SyncState.Ready(count)
         }
     }

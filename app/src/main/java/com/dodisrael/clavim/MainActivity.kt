@@ -34,7 +34,11 @@ class MainActivity : FragmentActivity() {
             try {
                 val count = FosteringDatabase.get(applicationContext).dao().countPosts()
                 if (count > 0) {
-                    syncFosteringChannel(applicationContext, incremental = false, onProgress = {})
+                    val error = syncFosteringChannel(applicationContext, incremental = false, onProgress = {})
+                    if (error == null) {
+                        applicationContext.getSharedPreferences("clients_photo_cache", android.content.Context.MODE_PRIVATE)
+                            .edit().clear().apply()
+                    }
                 }
             } catch (_: Exception) {
             } finally {

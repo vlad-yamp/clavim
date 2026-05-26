@@ -31,6 +31,9 @@ interface FosteringDao {
     @Query("SELECT photoUrl, caption, date FROM fostering_posts WHERE caption LIKE '%' || :query || '%' ORDER BY postId DESC")
     fun search(query: String): List<FosteringPost>
 
+    @Query("SELECT photoUrl, caption, date FROM fostering_posts ORDER BY postId DESC LIMIT :limit")
+    fun getRecentPosts(limit: Int): List<FosteringPost>
+
     @Query("SELECT MAX(postId) FROM fostering_posts")
     fun getMaxPostId(): Long?
 
@@ -74,9 +77,19 @@ suspend fun filterFosteringPosts(
                 "${i + 1}: ${p.caption.take(300).ifBlank { "(без текста)" }}"
             }.joinToString("\n")
 
-            val nameCondition = if (dogName.isNotBlank())
-                "\n- В посте упоминается собака с именем «$dogName» именно как имя собаки (не как часть другого слова, например «потом» или «автоматически»)"
-            else ""
+            val nameCondition = if (dogName.isNotBlank()) {
+                val parts = dogName.split(Regex("[+&,]|(?<![а-яёА-ЯЁa-zA-Z])и(?![а-яёА-ЯЁa-zA-Z])"))
+                    .map { it.trim() }.filter { it.isNotBlank() }
+                if (parts.size > 1) {
+                    val named = parts.joinToString(" и ") { "«$it»" }
+                    "\n- В посте упоминаются ВСЕ собаки: $named. Если упомянута только одна из них — пост не подходит. Имена могут быть написаны чуть иначе (другая транслитерация е/э, одна/двойная согласная)"
+                } else {
+                    "\n- В посте упоминается собака «$dogName». " +
+                    "Допустимо: другая транслитерация (е/э, одна/двойная согласная), а также сокращённая форма — когда имя в посте является началом клички клиента (например «Джесси» подходит для «Джессика»). " +
+                    "Недопустимо: если имя в посте ДЛИННЕЕ клички «$dogName» — это другая собака (например для клички «Бен» имя «Беня» не подходит, так как «Беня» длиннее). " +
+                    "Если в посте несколько собак и «$dogName» лишь одна из них — пост не подходит"
+                }
+            } else ""
 
             val userPrompt = """Посты из Telegram-канала о собаках. Определи, какие из них ТОЧНО соответствуют ВСЕМ условиям:
 - Относятся к передержке или пансиону конкретной собаки (пост о пребывании собаки на передержке/пансионе)$nameCondition

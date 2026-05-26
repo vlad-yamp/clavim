@@ -1210,6 +1210,24 @@ private fun clientClarification(client: ClientInfo): String = when {
     else -> ""
 }
 
+private fun generateSearchTerms(dogName: String): List<String> {
+    val parts = dogName.split(Regex("[+&,]|(?<![а-яёА-ЯЁa-zA-Z])и(?![а-яёА-ЯЁa-zA-Z])"))
+        .map { it.trim() }.filter { it.length >= 3 }
+    val terms = mutableSetOf<String>()
+    for (part in parts) {
+        terms.add(part)
+        terms.add(part.replace("е", "э").replace("Е", "Э"))
+        terms.add(part.replace("э", "е").replace("Э", "Е"))
+        for (ch in listOf("с", "ж", "д", "л", "н", "т", "р", "к", "п", "б")) {
+            val doubled = ch + ch
+            if (part.contains(doubled, ignoreCase = true))
+                terms.add(part.replace(doubled, ch, ignoreCase = true))
+        }
+        if (part.length > 6) terms.add(part.dropLast(2))
+    }
+    return terms.filter { it.length >= 3 }.distinct()
+}
+
 private suspend fun findClientPhoto(
     context: Context,
     client: ClientInfo,
@@ -1217,8 +1235,10 @@ private suspend fun findClientPhoto(
     apiKey: String
 ): String? = withContext(Dispatchers.IO) {
     try {
-        val raw = FosteringDatabase.get(context).dao().search(client.dogName)
-        if (raw.isEmpty()) return@withContext null
+        val dao = FosteringDatabase.get(context).dao()
+        val searchTerms = generateSearchTerms(client.dogName)
+        var raw = searchTerms.flatMap { dao.search(it) }.distinctBy { it.photoUrl }
+        if (raw.isEmpty()) raw = dao.getRecentPosts(150)
         val posts = filterFosteringPosts(raw, apiKey, client.dogName)
         if (posts.isEmpty()) return@withContext null
         if (uniqueOwnerCount <= 1) return@withContext posts.firstOrNull()?.photoUrl
@@ -1261,7 +1281,10 @@ private suspend fun findAllClientPhotos(
     apiKey: String
 ): List<String> = withContext(Dispatchers.IO) {
     try {
-        val raw = FosteringDatabase.get(context).dao().search(client.dogName)
+        val dao = FosteringDatabase.get(context).dao()
+        val searchTerms = generateSearchTerms(client.dogName)
+        var raw = searchTerms.flatMap { dao.search(it) }.distinctBy { it.photoUrl }
+        if (raw.isEmpty()) raw = dao.getRecentPosts(150)
         if (raw.isEmpty()) return@withContext emptyList()
         val posts = filterFosteringPosts(raw, apiKey, client.dogName)
         if (uniqueOwnerCount <= 1) {
