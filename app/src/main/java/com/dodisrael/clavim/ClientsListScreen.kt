@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -1228,7 +1229,7 @@ private fun generateSearchTerms(dogName: String): List<String> {
     return terms.filter { it.length >= 3 }.distinct()
 }
 
-private suspend fun findClientPhoto(
+internal suspend fun findClientPhoto(
     context: Context,
     client: ClientInfo,
     uniqueOwnerCount: Int,
@@ -1478,7 +1479,7 @@ private fun dogsPerDay(clients: List<ClientInfo>, month: Int, year: Int): List<I
     return counts.toList()
 }
 
-internal enum class TimelineChartType { TIMELINE, BAR }
+internal enum class TimelineChartType { TIMELINE, BAR, PIE }
 
 private fun dogWord(n: Int): String = when {
     n % 100 in 11..19 -> "собак"
@@ -1796,6 +1797,13 @@ private fun BoardingChartDialog(
                             contentDescription = "По дням",
                             tint = if (chartType == TimelineChartType.BAR) Color(0xFF388E3C) else Color(0xFFBDBDBD),
                             modifier = Modifier.size(24.dp).clickable { chartType = TimelineChartType.BAR }
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        Icon(
+                            imageVector = Icons.Default.PieChart,
+                            contentDescription = "Доля по дням",
+                            tint = if (chartType == TimelineChartType.PIE) Color(0xFF388E3C) else Color(0xFFBDBDBD),
+                            modifier = Modifier.size(24.dp).clickable { chartType = TimelineChartType.PIE }
                         )
                     }
                     if (chartType == TimelineChartType.BAR) {
@@ -2146,6 +2154,13 @@ private fun BoardingChartDialog(
                         }
                     }
                 }
+                TimelineChartType.PIE ->
+                    PieChartView(
+                        modifier = Modifier.weight(1f),
+                        intervals = intervals,
+                        colors = dogColors,
+                        photoCache = photoCache
+                    )
                 } // when
             } // Column
             } // BoxWithConstraints
@@ -2360,6 +2375,13 @@ internal fun BoardingTimeline(
                             contentDescription = "По дням",
                             tint = if (chartType == TimelineChartType.BAR) Color(0xFF388E3C) else Color(0xFFBDBDBD),
                             modifier = Modifier.size(24.dp).clickable { chartType = TimelineChartType.BAR }
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        Icon(
+                            imageVector = Icons.Default.PieChart,
+                            contentDescription = "Доля по дням",
+                            tint = if (chartType == TimelineChartType.PIE) Color(0xFF388E3C) else Color(0xFFBDBDBD),
+                            modifier = Modifier.size(24.dp).clickable { chartType = TimelineChartType.PIE }
                         )
                     }
                     Row(
@@ -2666,7 +2688,228 @@ internal fun BoardingTimeline(
                         }
                     }
                 }
+                TimelineChartType.PIE ->
+                    PieChartView(
+                        modifier = Modifier.weight(1f),
+                        intervals = intervals,
+                        colors = DOG_COLORS,
+                        photoCache = photoCache
+                    )
                 } // when
+            }
+        }
+    }
+}
+
+private data class PieSlice(
+    val label: String,
+    val days: Int,
+    val color: Color,
+    val clientIntervals: List<DogInterval>
+)
+
+@Composable
+private fun PieChartView(
+    modifier: Modifier = Modifier,
+    intervals: List<DogInterval>,
+    colors: List<Color>,
+    photoCache: Map<String, String> = emptyMap()
+) {
+    val slices = remember(intervals) {
+        intervals
+            .groupBy { clientPhotoKey(it.client) }
+            .map { (_, group) ->
+                val days = group.sumOf { (it.actualEnd.toEpochDay() - it.actualStart.toEpochDay()).toInt() }
+                PieSlice(group.first().client.dogName, days, Color.Unspecified, group)
+            }
+            .filter { it.days > 0 }
+            .sortedByDescending { it.days }
+            .mapIndexed { i, s -> s.copy(color = colors[i % colors.size]) }
+    }
+
+    if (slices.isEmpty()) {
+        Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Text("Нет данных", color = Color(0xFF9E9E9E))
+        }
+        return
+    }
+
+    val total = slices.sumOf { it.days }
+    var selectedSlice by remember { mutableStateOf<PieSlice?>(null) }
+    val dateFmt = remember { DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru")) }
+    val gapDeg = 1.8f
+
+    val namePaint = remember { android.graphics.Paint().apply { isAntiAlias = true } }
+
+    // Popup при выборе
+    selectedSlice?.let { slice ->
+        val client = slice.clientIntervals.first().client
+        val photoUrl = photoCache[clientPhotoKey(client)]
+        Dialog(onDismissRequest = { selectedSlice = null }) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(8.dp),
+                border = BorderStroke(1.5.dp, slice.color.copy(alpha = 0.55f)),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column {
+                    Box(modifier = Modifier.fillMaxWidth().height(4.dp).background(slice.color))
+                    Row(
+                        modifier = Modifier.padding(12.dp).height(IntrinsicSize.Max),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(client.dogName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            if (client.ownerName.isNotBlank())
+                                Text(client.ownerName, fontSize = 13.sp, color = Color(0xFF424242))
+                            if (client.breed.isNotBlank())
+                                Text(client.breed, fontSize = 12.sp, color = Color(0xFF757575))
+                            if (client.phone.isNotBlank())
+                                Text(client.phone, fontSize = 13.sp, color = Color(0xFF1565C0))
+                            Spacer(Modifier.height(2.dp))
+                            slice.clientIntervals.forEach { iv ->
+                                Text(
+                                    "${iv.actualStart.format(dateFmt)} — ${iv.actualEnd.format(dateFmt)}",
+                                    fontSize = 13.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Text("Итого: ${slice.days} дн.", fontSize = 12.sp, color = Color(0xFF388E3C))
+                        }
+                        if (photoUrl?.isNotBlank() == true) {
+                            Spacer(Modifier.width(10.dp))
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(photoUrl).crossfade(true).build(),
+                                contentDescription = null,
+                                modifier = Modifier.width(107.dp).border(1.5.dp, Color(0xFF0D2B5E)),
+                                contentScale = ContentScale.FillWidth
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val wPx = constraints.maxWidth.toFloat()
+        val hPx = constraints.maxHeight.toFloat()
+        val minD = minOf(wPx, hPx)
+        val strokeW   = minD * 0.13f
+        val donutR    = wPx * 0.18f
+        val outerEdge = donutR + strokeW / 2f
+        val innerEdge = donutR - strokeW / 2f
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(slices) {
+                    detectTapGestures { offset ->
+                        val dx = offset.x - wPx / 2f
+                        val dy = offset.y - hPx / 2f
+                        val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                        if (dist < innerEdge || dist > outerEdge) return@detectTapGestures
+                        var tapAngle = Math.toDegrees(Math.atan2(dy.toDouble(), dx.toDouble())).toFloat()
+                        tapAngle = ((tapAngle + 90f) % 360f + 360f) % 360f
+                        var start = 0f
+                        selectedSlice = slices.firstOrNull { slice ->
+                            val sweep = (slice.days.toFloat() / total * 360f - gapDeg).coerceAtLeast(0.5f)
+                            (tapAngle >= start && tapAngle < start + sweep).also { start += sweep + gapDeg }
+                        }
+                    }
+                }
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                val sw   = minOf(size.width, size.height) * 0.13f
+                val dR   = size.width * 0.18f
+                val arcTL = Offset(cx - dR, cy - dR)
+                val arcSz = Size(dR * 2f, dR * 2f)
+                val lineLen = size.width * 0.045f
+                val tickLen = size.width * 0.038f
+                val lineW   = 1.4.dp.toPx()
+                val minSweepForLabel = 8f
+
+                namePaint.textSize = 10.5.sp.toPx()
+                namePaint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+
+                val daysPaint = android.graphics.Paint().apply {
+                    isAntiAlias = true
+                    textSize    = 9.sp.toPx()
+                    typeface    = android.graphics.Typeface.DEFAULT
+                }
+
+                var startAngle = -90f
+                slices.forEach { slice ->
+                    val isSelected = selectedSlice?.label == slice.label
+                    val sweep = (slice.days.toFloat() / total * 360f - gapDeg).coerceAtLeast(0.5f)
+
+                    drawArc(
+                        color = if (isSelected) slice.color else slice.color.copy(alpha = 0.84f),
+                        startAngle = startAngle,
+                        sweepAngle = sweep,
+                        useCenter = false,
+                        topLeft = arcTL,
+                        size = arcSz,
+                        style = Stroke(width = if (isSelected) sw * 1.10f else sw)
+                    )
+
+                    if (sweep >= minSweepForLabel) {
+                        val midDeg = startAngle + sweep / 2f
+                        val midRad = Math.toRadians(midDeg.toDouble())
+                        val cos = Math.cos(midRad).toFloat()
+                        val sin = Math.sin(midRad).toFloat()
+                        val isRight = cos >= 0f
+
+                        val oe = dR + sw / 2f
+                        val x1 = cx + oe * cos
+                        val y1 = cy + oe * sin
+                        val x2 = cx + (oe + lineLen) * cos
+                        val y2 = cy + (oe + lineLen) * sin
+                        val x3 = x2 + (if (isRight) tickLen else -tickLen)
+
+                        drawLine(slice.color.copy(alpha = 0.65f), Offset(x1, y1), Offset(x2, y2), lineW)
+                        drawLine(slice.color.copy(alpha = 0.65f), Offset(x2, y2), Offset(x3, y2), lineW)
+
+                        drawIntoCanvas { canvas ->
+                            val gap    = 3.dp.toPx()
+                            val textX  = x3 + (if (isRight) gap else -gap)
+                            val align  = if (isRight) android.graphics.Paint.Align.LEFT
+                                         else        android.graphics.Paint.Align.RIGHT
+                            namePaint.color     = slice.color.toArgb()
+                            namePaint.textAlign = align
+                            daysPaint.color     = slice.color.copy(alpha = 0.75f).toArgb()
+                            daysPaint.textAlign = align
+
+                            // Available width from tick endpoint to canvas edge
+                            val availableW = if (isRight) (size.width - textX) else textX
+                            val displayName = if (namePaint.measureText(slice.label) <= availableW) slice.label
+                                else {
+                                    var t = slice.label
+                                    while (t.isNotEmpty() && namePaint.measureText("$t…") > availableW)
+                                        t = t.dropLast(1)
+                                    if (t.isEmpty()) "…" else "$t…"
+                                }
+                            val daysText = "${slice.days} дн."
+
+                            // Two-line block centered at y2
+                            val fm    = namePaint.fontMetrics
+                            val lineH = fm.descent - fm.ascent
+                            val centerToBaseline = -(fm.ascent + fm.descent) / 2f
+                            val nameBaseline = (y2 - lineH / 2f) + centerToBaseline
+                            val daysBaseline = (y2 + lineH / 2f) + centerToBaseline
+
+                            canvas.nativeCanvas.drawText(displayName, textX, nameBaseline, namePaint)
+                            canvas.nativeCanvas.drawText(daysText,    textX, daysBaseline, daysPaint)
+                        }
+                    }
+
+                    startAngle += sweep + gapDeg
+                }
             }
         }
     }

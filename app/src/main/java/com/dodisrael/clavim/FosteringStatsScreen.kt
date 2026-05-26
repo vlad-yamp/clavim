@@ -67,7 +67,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
@@ -216,14 +219,14 @@ fun FosteringStatsScreen(
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
+        var loaded: List<ClientInfo> = emptyList()
         try {
             supervisorScope {
                 val statsJob   = async { fetchStatsData() }
                 val clientsJob = async { fetchAllClients(context) }
-                rows = statsJob.await()
-                val loaded = clientsJob.await()
+                rows   = statsJob.await()
+                loaded = clientsJob.await()
                 allClients = loaded
-                // Загружаем уже закешированные фото из SharedPreferences (без сетевых запросов)
                 val photoPrefs = context.getSharedPreferences("clients_photo_cache", Context.MODE_PRIVATE)
                 photoCache = loaded.mapNotNull { client ->
                     val key = clientPhotoKey(client)
@@ -235,6 +238,32 @@ fun FosteringStatsScreen(
             error = e.message ?: "Ошибка загрузки"
         } finally {
             isLoading = false
+        }
+
+        // Fetch photos not yet in cache — runs after UI is already visible
+        if (loaded.isEmpty()) return@LaunchedEffect
+        val prefs      = context.getSharedPreferences("clavim_prefs", Context.MODE_PRIVATE)
+        val apiKey     = prefs.getString("openai_api_key", "") ?: ""
+        val photoPrefs = context.getSharedPreferences("clients_photo_cache", Context.MODE_PRIVATE)
+        val byDogName  = loaded.groupBy { it.dogName.lowercase() }
+        val uncached   = loaded.filter { photoPrefs.getString(clientPhotoKey(it), null).isNullOrBlank() }
+        if (uncached.isEmpty()) return@LaunchedEffect
+        val semaphore  = Semaphore(5)
+        supervisorScope {
+            uncached.forEach { client ->
+                val key = clientPhotoKey(client)
+                launch {
+                    semaphore.withPermit {
+                        val uniqueOwners = byDogName[client.dogName.lowercase()]
+                            ?.distinctBy { it.ownerName.lowercase() }?.size ?: 1
+                        val url = findClientPhoto(context, client, uniqueOwners, apiKey)
+                        if (url != null) {
+                            photoPrefs.edit().putString(key, url).apply()
+                            photoCache = photoCache + (key to url)
+                        }
+                    }
+                }
+            }
         }
     }
 
