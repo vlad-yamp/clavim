@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
@@ -22,16 +23,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,9 +53,12 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -82,6 +91,8 @@ private enum class BalCol(
     HELP    ("Помощь",      "Помощь",  Color(0xFF00695C), 4, { "%.0f ₪".format(it) }),
     TOTAL   ("Итого",       "Итого",   Color(0xFF37474F), 5, { "%.0f ₪".format(it) })
 }
+
+private val BAL_PIE_COLS = BalCol.values().filter { it != BalCol.TOTAL }
 
 private fun parseBalCsvLine(line: String): List<String> {
     val result = mutableListOf<String>()
@@ -121,12 +132,11 @@ private suspend fun fetchBalanceData(): List<BalRow> = withContext(Dispatchers.I
     conn.disconnect()
     csv.lines().drop(1).mapNotNull { line ->
         if (line.isBlank()) return@mapNotNull null
-        val c     = parseBalCsvLine(line)
+        val c        = parseBalCsvLine(line)
         val rawMonth = c.getOrNull(0)?.trim() ?: return@mapNotNull null
         if (rawMonth.isBlank()) return@mapNotNull null
-        val month = normalizeBalMonth(rawMonth)
         BalRow(
-            month  = month,
+            month  = normalizeBalMonth(rawMonth),
             values = listOf(
                 parseNum(c.getOrNull(1)),
                 parseNum(c.getOrNull(2)),
@@ -206,12 +216,17 @@ private fun BalanceBody(
     currentMonth: String,
     onColClick: (BalCol) -> Unit
 ) {
-    val density      = LocalDensity.current
-    val minChartPx   = with(density) { 80.dp.toPx() }
-    val maxChartPx   = with(density) { 380.dp.toPx() }
+    val density       = LocalDensity.current
+    val minChartPx    = with(density) { 80.dp.toPx() }
+    val maxChartPx    = with(density) { 380.dp.toPx() }
     var chartHeightPx by remember { mutableFloatStateOf(with(density) { 160.dp.toPx() }) }
-    val hScroll      = rememberScrollState()
-    val vScroll      = rememberScrollState()
+    val hScroll       = rememberScrollState()
+    val vScroll       = rememberScrollState()
+
+    var selectedBarMonth by remember { mutableStateOf<String?>(null) }
+    val selectedRow = remember(selectedBarMonth, rows) {
+        rows.firstOrNull { it.month == selectedBarMonth }
+    }
 
     Column(
         Modifier
@@ -251,6 +266,7 @@ private fun BalanceBody(
             rows         = rows,
             col          = selCol,
             currentMonth = currentMonth,
+            onBarTap     = { month -> selectedBarMonth = month },
             modifier     = Modifier
                 .fillMaxWidth()
                 .height(with(density) { chartHeightPx.toDp() })
@@ -279,33 +295,67 @@ private fun BalanceBody(
             )
         }
 
-        // Frozen table header
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max)) {
-            BalMonthHeader()
-            Box(Modifier.width(1.dp).fillMaxHeight().background(Color(0xFFBBBBBB)))
-            Box(Modifier.weight(1f).horizontalScroll(hScroll)) {
-                BalDataHeader(selCol)
-            }
-        }
-        HorizontalDivider(color = Color(0xFF37474F), thickness = 1.dp)
-
-        // Table data rows
-        Row(Modifier.fillMaxSize()) {
-            Column(Modifier.width(W_BAL_MONTH).fillMaxHeight().verticalScroll(vScroll)) {
-                rows.forEachIndexed { i, row ->
-                    BalMonthCell(row, even = i % 2 == 0, isCurrent = row.month == currentMonth)
-                    HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 0.5.dp)
+        if (selectedRow != null) {
+            // Pie chart section
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF5F7FA))
+                    .padding(start = 14.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Структура за ${selectedRow.month}",
+                    fontSize   = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = Color(0xFF37474F),
+                    modifier   = Modifier.weight(1f)
+                )
+                IconButton(
+                    onClick  = { selectedBarMonth = null },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Default.TableChart,
+                        contentDescription = "К таблице",
+                        tint     = Color(0xFF37474F),
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
-                Spacer(Modifier.height(20.dp))
             }
-            Box(Modifier.width(1.dp).fillMaxHeight().background(Color(0xFFBBBBBB)))
-            Box(Modifier.fillMaxSize().horizontalScroll(hScroll)) {
-                Column(Modifier.verticalScroll(vScroll)) {
+            HorizontalDivider(color = Color(0xFFBBBBBB), thickness = 0.5.dp)
+            BalPieView(
+                row      = selectedRow,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            // Table
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max)) {
+                BalMonthHeader()
+                Box(Modifier.width(1.dp).fillMaxHeight().background(Color(0xFFBBBBBB)))
+                Box(Modifier.weight(1f).horizontalScroll(hScroll)) {
+                    BalDataHeader(selCol)
+                }
+            }
+            HorizontalDivider(color = Color(0xFF37474F), thickness = 1.dp)
+
+            Row(Modifier.fillMaxSize()) {
+                Column(Modifier.width(W_BAL_MONTH).fillMaxHeight().verticalScroll(vScroll)) {
                     rows.forEachIndexed { i, row ->
-                        BalDataRow(row, even = i % 2 == 0, selCol = selCol, isCurrent = row.month == currentMonth)
+                        BalMonthCell(row, even = i % 2 == 0, isCurrent = row.month == currentMonth)
                         HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 0.5.dp)
                     }
                     Spacer(Modifier.height(20.dp))
+                }
+                Box(Modifier.width(1.dp).fillMaxHeight().background(Color(0xFFBBBBBB)))
+                Box(Modifier.fillMaxSize().horizontalScroll(hScroll)) {
+                    Column(Modifier.verticalScroll(vScroll)) {
+                        rows.forEachIndexed { i, row ->
+                            BalDataRow(row, even = i % 2 == 0, selCol = selCol, isCurrent = row.month == currentMonth)
+                            HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 0.5.dp)
+                        }
+                        Spacer(Modifier.height(20.dp))
+                    }
                 }
             }
         }
@@ -321,11 +371,20 @@ private fun BalBarChart(
     rows: List<BalRow>,
     col: BalCol,
     currentMonth: String,
+    onBarTap: (String) -> Unit,
     modifier: Modifier
 ) {
-    val currentIdx = remember(rows, currentMonth) { rows.indexOfFirst { it.month == currentMonth } }
-    val values     = remember(rows, col) { rows.map { it.values[col.colIdx] } }
-    val maxVal     = remember(values) { values.maxOrNull()?.takeIf { it > 0.0 } ?: 1.0 }
+    val values    = remember(rows, col) { rows.map { it.values[col.colIdx] } }
+    val maxVal    = remember(values) { values.filter { it > 0 }.maxOrNull() ?: 1.0 }
+
+    // Reference lines exclude current (incomplete) month
+    val histVals  = remember(rows, col, currentMonth) {
+        rows.filter { it.month != currentMonth }.map { it.values[col.colIdx] }.filter { it > 0 }
+    }
+    val refMin    = remember(histVals) { histVals.minOrNull() ?: 0.0 }
+    val refAvg    = remember(histVals) { if (histVals.isEmpty()) 0.0 else histVals.average() }
+    val refMax    = remember(histVals) { histVals.maxOrNull() ?: 0.0 }
+
     val totalWidth = BAL_SLOT_DP * rows.size
     val hScroll    = rememberScrollState()
     val density    = LocalDensity.current
@@ -356,7 +415,18 @@ private fun BalBarChart(
                 }
 
                 Box(Modifier.fillMaxSize().horizontalScroll(hScroll)) {
-                    Canvas(Modifier.width(totalWidth).fillMaxHeight()) {
+                    Canvas(
+                        Modifier
+                            .width(totalWidth)
+                            .fillMaxHeight()
+                            .pointerInput(rows) {
+                                detectTapGestures { offset ->
+                                    val slotW = size.width.toFloat() / rows.size.coerceAtLeast(1)
+                                    val idx   = (offset.x / slotW).toInt().coerceIn(0, rows.lastIndex)
+                                    onBarTap(rows[idx].month)
+                                }
+                            }
+                    ) {
                         val n = rows.size
                         if (n == 0) return@Canvas
 
@@ -380,6 +450,7 @@ private fun BalBarChart(
                             color          = col.color.copy(alpha = 0.9f).toArgb()
                         }
 
+                        // Background grid
                         repeat(3) { k ->
                             val gy = padTop + chartH * (1f - (k + 1) / 4f)
                             drawLine(Color(0xFFE8E8E8), Offset(0f, gy), Offset(size.width, gy), 0.7.dp.toPx())
@@ -391,6 +462,26 @@ private fun BalBarChart(
                             1.dp.toPx()
                         )
 
+                        // Min / Avg / Max dashed reference lines (no labels)
+                        if (histVals.isNotEmpty()) {
+                            val dash = PathEffect.dashPathEffect(floatArrayOf(8f, 5f), 0f)
+                            listOf(
+                                refMin to Color(0xFF43A047),
+                                refAvg to Color(0xFF1565C0),
+                                refMax to Color(0xFFC62828)
+                            ).forEach { (v, clr) ->
+                                val yRef = padTop + chartH * (1f - (v / maxVal).toFloat())
+                                drawLine(
+                                    color       = clr.copy(alpha = 0.55f),
+                                    start       = Offset(0f, yRef),
+                                    end         = Offset(size.width, yRef),
+                                    strokeWidth = 1.dp.toPx(),
+                                    pathEffect  = dash
+                                )
+                            }
+                        }
+
+                        // Bars
                         rows.forEachIndexed { idx, row ->
                             val isCurrent = row.month == currentMonth
                             val v         = row.values[col.colIdx]
@@ -442,6 +533,108 @@ private fun BalBarChart(
                     }
                 }
             }
+        }
+    }
+}
+
+// ── Pie chart ─────────────────────────────────────────────────────────────────
+
+@Composable
+private fun BalPieView(row: BalRow, modifier: Modifier = Modifier) {
+    val slices = remember(row) {
+        BAL_PIE_COLS.mapNotNull { col ->
+            val v = row.values[col.colIdx]
+            if (v <= 0) null else Triple(col.label, v, col.color)
+        }
+    }
+    val total = remember(slices) { slices.sumOf { it.second } }
+
+    if (slices.isEmpty() || total <= 0.0) {
+        Box(modifier, contentAlignment = Alignment.Center) {
+            Text("Нет данных", color = Color(0xFF9E9E9E))
+        }
+        return
+    }
+
+    val gapDeg          = 1.8f
+    val minSweepForLabel = 10f
+    val namePaint = remember { Paint().apply { isAntiAlias = true } }
+    val valPaint  = remember { Paint().apply { isAntiAlias = true } }
+
+    Canvas(modifier = modifier) {
+        val cx      = size.width / 2f
+        val cy      = size.height / 2f
+        val sw      = minOf(size.width, size.height) * 0.14f
+        val dR      = size.width * 0.20f
+        val oe      = dR + sw / 2f
+        val lineLen = size.width * 0.05f
+        val tickLen = size.width * 0.04f
+        val lineW   = 1.4.dp.toPx()
+        val arcTL   = Offset(cx - dR, cy - dR)
+        val arcSz   = Size(dR * 2f, dR * 2f)
+
+        namePaint.textSize = 10.5.sp.toPx()
+        namePaint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        valPaint.textSize  = 9.sp.toPx()
+        valPaint.typeface  = android.graphics.Typeface.DEFAULT
+
+        var startAngle = -90f
+        slices.forEach { (label, value, color) ->
+            val sweep = (value / total * 360f - gapDeg).toFloat().coerceAtLeast(0.5f)
+
+            drawArc(
+                color       = color.copy(alpha = 0.84f),
+                startAngle  = startAngle,
+                sweepAngle  = sweep,
+                useCenter   = false,
+                topLeft     = arcTL,
+                size        = arcSz,
+                style       = Stroke(width = sw)
+            )
+
+            if (sweep >= minSweepForLabel) {
+                val midRad  = Math.toRadians((startAngle + sweep / 2f).toDouble())
+                val cos     = Math.cos(midRad).toFloat()
+                val sin     = Math.sin(midRad).toFloat()
+                val isRight = cos >= 0f
+
+                val x1 = cx + oe * cos
+                val y1 = cy + oe * sin
+                val x2 = cx + (oe + lineLen) * cos
+                val y2 = cy + (oe + lineLen) * sin
+                val x3 = x2 + (if (isRight) tickLen else -tickLen)
+
+                drawLine(color.copy(alpha = 0.6f), Offset(x1, y1), Offset(x2, y2), lineW)
+                drawLine(color.copy(alpha = 0.6f), Offset(x2, y2), Offset(x3, y2), lineW)
+
+                drawIntoCanvas { canvas ->
+                    val gap    = 3.dp.toPx()
+                    val textX  = x3 + (if (isRight) gap else -gap)
+                    val align  = if (isRight) Paint.Align.LEFT else Paint.Align.RIGHT
+
+                    namePaint.color     = color.toArgb()
+                    namePaint.textAlign = align
+                    valPaint.color      = color.copy(alpha = 0.75f).toArgb()
+                    valPaint.textAlign  = align
+
+                    val availW = if (isRight) (size.width - textX) else textX
+                    val displayName = if (namePaint.measureText(label) <= availW) label
+                        else {
+                            var t = label
+                            while (t.isNotEmpty() && namePaint.measureText("$t…") > availW) t = t.dropLast(1)
+                            if (t.isEmpty()) "…" else "$t…"
+                        }
+                    val valText = "%.0f ₪".format(value)
+
+                    val fm    = namePaint.fontMetrics
+                    val lineH = fm.descent - fm.ascent
+                    val c2b   = -(fm.ascent + fm.descent) / 2f
+                    canvas.nativeCanvas.drawText(displayName, textX, (y2 - lineH / 2f) + c2b, namePaint)
+                    canvas.nativeCanvas.drawText(valText,     textX, (y2 + lineH / 2f) + c2b, valPaint)
+                }
+            }
+
+            startAngle += sweep + gapDeg
         }
     }
 }
