@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.filled.Dataset
 import androidx.compose.material.icons.filled.LocationOn
@@ -29,10 +30,11 @@ fun InfoMenuScreen(
     onExchangeRatesClick: () -> Unit,
     onAddressesClick: () -> Unit,
     onDataEntriesClick: () -> Unit,
+    onBalanceClick: () -> Unit,
     onWebViewClick: (url: String, title: String) -> Unit
 ) {
     val context = LocalContext.current
-    val items = remember { buildInfoMenuItems(onExchangeRatesClick, onAddressesClick, onDataEntriesClick, onWebViewClick) }
+    val items = remember { buildInfoMenuItems(onExchangeRatesClick, onAddressesClick, onDataEntriesClick, onBalanceClick, onWebViewClick) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
@@ -57,6 +59,7 @@ private fun buildInfoMenuItems(
     onExchangeRatesClick: () -> Unit,
     onAddressesClick: () -> Unit,
     onDataEntriesClick: () -> Unit,
+    onBalanceClick: () -> Unit,
     onWebViewClick: (url: String, title: String) -> Unit
 ): List<MenuItem> = listOf(
     MenuItem("Курсы\nвалют", Icons.Default.CurrencyExchange, Color(0xFF00695C)) { _ ->
@@ -67,6 +70,9 @@ private fun buildInfoMenuItems(
     },
     MenuItem("Наши\nданные", Icons.Default.Dataset, Color(0xFF1565C0)) { _ ->
         onDataEntriesClick()
+    },
+    MenuItem("Баланс", Icons.Default.AccountBalance, Color(0xFF37474F)) { _ ->
+        onBalanceClick()
     },
     MenuItem("Список\nпород", Icons.Default.Pets, Color(0xFF8D6E63)) { _ ->
         onWebViewClick("https://petstory.ru/knowledge/dogs/dog-breeds/", "Список пород")

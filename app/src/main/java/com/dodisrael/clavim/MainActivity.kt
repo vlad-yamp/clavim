@@ -80,7 +80,7 @@ fun AppContent() {
 
     BackHandler(enabled = screen != Screen.MAIN) {
         screen = when (screen) {
-            Screen.EXCHANGE_RATES, Screen.ADDRESSES, Screen.DATA_ENTRIES -> Screen.INFO
+            Screen.EXCHANGE_RATES, Screen.ADDRESSES, Screen.DATA_ENTRIES, Screen.BALANCE -> Screen.INFO
             Screen.TELEGRAM_FOSTERING -> Screen.TELEGRAM
             Screen.WHATSAPP_REMINDER, Screen.WHATSAPP_HOMEWORK, Screen.WHATSAPP_DOG_MESSAGE,
             Screen.WHATSAPP_TRANSLATION, Screen.WHATSAPP_PICKUP -> Screen.WHATSAPP
@@ -108,8 +108,10 @@ fun AppContent() {
             onExchangeRatesClick = { screen = Screen.EXCHANGE_RATES },
             onAddressesClick = { screen = Screen.ADDRESSES },
             onDataEntriesClick = { screen = Screen.DATA_ENTRIES },
+            onBalanceClick = { screen = Screen.BALANCE },
             onWebViewClick = { url, title -> openWebView(url, title, Screen.INFO) }
         )
+        Screen.BALANCE             -> BalanceScreen(onBack = { screen = Screen.INFO })
         Screen.ADDRESSES           -> AddressesScreen(onBack = { screen = Screen.INFO })
         Screen.DATA_ENTRIES        -> DataEntriesScreen(onBack = { screen = Screen.INFO })
         Screen.EXCHANGE_RATES      -> ExchangeRatesScreen(onBack = { screen = Screen.INFO })
