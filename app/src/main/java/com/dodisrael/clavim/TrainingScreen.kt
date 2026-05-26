@@ -100,8 +100,6 @@ private enum class GroupField(val label: String) {
     AT_CLIENT("У клиента")
 }
 
-private val BOOLEAN_GROUP_FIELDS = setOf(GroupField.IS_FIRST, GroupField.IS_INDIVIDUAL, GroupField.AT_CLIENT)
-
 private enum class ValueType(val label: String) {
     COUNT("Количество"), SUM("Сумма ₪")
 }
@@ -615,9 +613,8 @@ private fun TrGroupedChart(
         return
     }
 
-    val hasG2    = g2 != GroupField.NONE
-    // Boolean g2 fields use stacked bars; others use grouped bars
-    val stacked  = hasG2 && g2 in BOOLEAN_GROUP_FIELDS
+    val hasG2   = g2 != GroupField.NONE
+    val stacked = hasG2
 
     val g1Keys = entries.map { it.k1 }.distinctBy { it.sort }.sortedBy { it.sort }
     val g2Keys = if (hasG2) entries.map { it.k2 }.distinctBy { it.sort }.sortedBy { it.sort }
