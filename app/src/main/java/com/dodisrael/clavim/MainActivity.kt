@@ -241,6 +241,7 @@ fun AppContent() {
                 fosteringStatsInitialMonth = if (m != null && y != null) m to y else null
                 screen = Screen.FOSTERING_STATS
             },
+            onTrainingClick = { screen = Screen.TRAINING },
             initialFormAction = boardingInitialAction,
             presetDogName = boardingPresetDogName,
             presetClarification = boardingPresetClarification,
