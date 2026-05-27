@@ -36,7 +36,8 @@
       "Bash(adb install *)",
       "Bash(adb shell *)",
       "PowerShell($adb = \"$env:LOCALAPPDATA\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\"; & $adb install -r \"D:\\\\Projects\\\\Android\\\\Clavim\\\\app\\\\build\\\\outputs\\\\apk\\\\debug\\\\app-debug.apk\"; & $adb shell am start -n com.dodisrael.clavim/.MainActivity)",
-      "Bash(codegraph init *)"
+      "Bash(codegraph init *)",
+      "mcp__codegraph__codegraph_explore"
     ]
   }
 }

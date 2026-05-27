@@ -23,7 +23,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.TableChart
@@ -536,8 +537,8 @@ private fun TrBoolCell(value: Boolean, width: Dp) =
 @Composable
 private fun TrRawTable(rows: List<TrainingRow>, dateFmt: DateTimeFormatter) {
     val hScroll  = rememberScrollState()
-    val vScroll  = rememberScrollState()
     val headerBg = Color(0xFF263238)
+    val total    = remember(rows) { rows.sumOf { it.amount } }
 
     Column(Modifier.fillMaxSize()) {
         // Header
@@ -554,26 +555,25 @@ private fun TrRawTable(rows: List<TrainingRow>, dateFmt: DateTimeFormatter) {
         }
         HorizontalDivider(color = Color(0xFF00695C), thickness = 1.dp)
 
-        Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(vScroll)) {
-            Column(Modifier.fillMaxWidth()) {
-                rows.forEachIndexed { i, row ->
-                    val bg = if (i % 2 == 0) Color(0xFFF5F7FA) else Color.White
-                    Row(Modifier.fillMaxWidth().background(bg).padding(vertical = 7.dp)) {
-                        TrDCell(row.ownerDog, W_TR_OWN)
-                        Row(Modifier.weight(1f).horizontalScroll(hScroll)) {
-                            TrDCell(row.date?.format(dateFmt) ?: "—", W_TR_DATE)
-                            TrDCell(row.breed.ifBlank { "—" }, W_TR_BREED)
-                            TrBoolCell(row.isFirst, W_TR_BOOL)
-                            TrBoolCell(row.isIndividual, W_TR_BOOL)
-                            TrBoolCell(row.atClient, W_TR_BOOL)
-                            TrDCell(if (row.amount > 0) "%.0f ₪".format(row.amount) else "—",
-                                W_TR_AMT, end = true)
-                        }
+        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+            itemsIndexed(rows) { i, row ->
+                val bg = if (i % 2 == 0) Color(0xFFF5F7FA) else Color.White
+                Row(Modifier.fillMaxWidth().background(bg).padding(vertical = 7.dp)) {
+                    TrDCell(row.ownerDog, W_TR_OWN)
+                    Row(Modifier.weight(1f).horizontalScroll(hScroll)) {
+                        TrDCell(row.date?.format(dateFmt) ?: "—", W_TR_DATE)
+                        TrDCell(row.breed.ifBlank { "—" }, W_TR_BREED)
+                        TrBoolCell(row.isFirst, W_TR_BOOL)
+                        TrBoolCell(row.isIndividual, W_TR_BOOL)
+                        TrBoolCell(row.atClient, W_TR_BOOL)
+                        TrDCell(if (row.amount > 0) "%.0f ₪".format(row.amount) else "—",
+                            W_TR_AMT, end = true)
                     }
-                    HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 0.5.dp)
                 }
-                if (rows.isNotEmpty()) {
-                    val total = rows.sumOf { it.amount }
+                HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 0.5.dp)
+            }
+            if (rows.isNotEmpty()) {
+                item {
                     Row(Modifier.fillMaxWidth().background(Color(0xFFE8F5E9)).padding(vertical = 8.dp)) {
                         Box(Modifier.width(W_TR_OWN).padding(horizontal = 8.dp)) {
                             Text("Итого: ${rows.size} занятий", fontSize = 12.sp,
@@ -586,8 +586,8 @@ private fun TrRawTable(rows: List<TrainingRow>, dateFmt: DateTimeFormatter) {
                         }
                     }
                 }
-                Spacer(Modifier.height(20.dp))
             }
+            item { Spacer(Modifier.height(20.dp)) }
         }
     }
 }
@@ -599,10 +599,9 @@ private fun TrGroupedTable(
     entries: List<GroupedEntry>, g1: GroupField, g2: GroupField, vt: ValueType
 ) {
     val hScroll    = rememberScrollState()
-    val vScroll    = rememberScrollState()
     val headerBg   = Color(0xFF263238)
     val hasG2      = g2 != GroupField.NONE
-    val totalValue = entries.sumOf { it.value }
+    val totalValue = remember(entries) { entries.sumOf { it.value } }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().background(headerBg).padding(vertical = 8.dp)) {
@@ -614,26 +613,26 @@ private fun TrGroupedTable(
         }
         HorizontalDivider(color = Color(0xFF00695C), thickness = 1.dp)
 
-        Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(vScroll)) {
-            Column(Modifier.fillMaxWidth()) {
-                entries.forEachIndexed { i, entry ->
-                    Row(Modifier.fillMaxWidth()
-                        .background(if (i % 2 == 0) Color(0xFFF5F7FA) else Color.White)
-                        .padding(vertical = 8.dp)
-                    ) {
-                        TrDCell(entry.k1.display, W_TR_GK)
-                        Row(Modifier.weight(1f).horizontalScroll(hScroll)) {
-                            if (hasG2) TrDCell(entry.k2.display, W_TR_GK)
-                            TrDCell(
-                                if (vt == ValueType.COUNT) entry.value.toInt().toString()
-                                else "%.0f ₪".format(entry.value),
-                                W_TR_VAL, end = true
-                            )
-                        }
+        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+            itemsIndexed(entries) { i, entry ->
+                Row(Modifier.fillMaxWidth()
+                    .background(if (i % 2 == 0) Color(0xFFF5F7FA) else Color.White)
+                    .padding(vertical = 8.dp)
+                ) {
+                    TrDCell(entry.k1.display, W_TR_GK)
+                    Row(Modifier.weight(1f).horizontalScroll(hScroll)) {
+                        if (hasG2) TrDCell(entry.k2.display, W_TR_GK)
+                        TrDCell(
+                            if (vt == ValueType.COUNT) entry.value.toInt().toString()
+                            else "%.0f ₪".format(entry.value),
+                            W_TR_VAL, end = true
+                        )
                     }
-                    HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 0.5.dp)
                 }
-                if (entries.isNotEmpty()) {
+                HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 0.5.dp)
+            }
+            if (entries.isNotEmpty()) {
+                item {
                     Row(Modifier.fillMaxWidth().background(Color(0xFFE8F5E9)).padding(vertical = 8.dp)) {
                         Box(Modifier.width(W_TR_GK).padding(horizontal = 6.dp)) {
                             Text("Итого", fontSize = 12.sp,
@@ -649,8 +648,8 @@ private fun TrGroupedTable(
                         }
                     }
                 }
-                Spacer(Modifier.height(20.dp))
             }
+            item { Spacer(Modifier.height(20.dp)) }
         }
     }
 }
