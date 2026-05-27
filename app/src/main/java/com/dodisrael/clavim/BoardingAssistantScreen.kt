@@ -202,7 +202,7 @@ fun BoardingAssistantScreen(
     onBack: () -> Unit,
     onTelegramFosteringClick: () -> Unit = {},
     onClientMonthClick: (month: Int, year: Int) -> Unit = { _, _ -> },
-    onStatsClick: () -> Unit = {},
+    onStatsClick: (month: Int?, year: Int?) -> Unit = { _, _ -> },
     initialFormAction: String? = null,
     presetDogName: String = "",
     presetClarification: String = "",
@@ -354,7 +354,8 @@ fun BoardingAssistantScreen(
         // Локальная детекция: статистика → открываем экран статистики
         val q0 = question.lowercase().trim()
         if (q0.contains("статистик")) {
-            onStatsClick()
+            val monthFilter = detectMonthFilter(question)
+            onStatsClick(monthFilter?.first, monthFilter?.second)
             question = ""
             return
         }

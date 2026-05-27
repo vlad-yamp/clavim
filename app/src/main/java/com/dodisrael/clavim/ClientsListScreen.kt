@@ -697,14 +697,30 @@ private fun ClientCard(
                 .weight(1f)
                 .clickable(onClick = onHistoryClick)
             ) {
-                Text(
-                    text = client.ownerName,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = Color(0xFF1A237E),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = client.ownerName,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = Color(0xFF1A237E),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (boardingInterval != null && client.phone.isNotBlank()) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = client.phone,
+                            fontSize = 12.sp,
+                            color = Color(0xFF1565C0),
+                            maxLines = 1
+                        )
+                    }
+                }
 
                 if (client.dogName.isNotBlank()) {
                     Spacer(Modifier.height(3.dp))

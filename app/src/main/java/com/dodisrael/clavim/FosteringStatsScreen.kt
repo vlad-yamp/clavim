@@ -197,7 +197,8 @@ private suspend fun fetchAllClients(context: Context): List<ClientInfo> = withCo
 @Composable
 fun FosteringStatsScreen(
     onBack: () -> Unit,
-    onClientMonthClick: (month: Int, year: Int) -> Unit = { _, _ -> }
+    onClientMonthClick: (month: Int, year: Int) -> Unit = { _, _ -> },
+    initialTimelineMonth: Pair<Int, Int>? = null
 ) {
     var rows       by remember { mutableStateOf<List<StatsRow>>(emptyList()) }
     var isLoading  by remember { mutableStateOf(true) }
@@ -214,7 +215,7 @@ fun FosteringStatsScreen(
     val currentMonthPair = remember {
         (cal.get(java.util.Calendar.MONTH) + 1) to cal.get(java.util.Calendar.YEAR)
     }
-    var timelineMonth by remember { mutableStateOf(currentMonthPair) }
+    var timelineMonth by remember { mutableStateOf(initialTimelineMonth ?: currentMonthPair) }
 
     val context = LocalContext.current
 

@@ -71,6 +71,7 @@ fun AppContent() {
     var boardingOnlyMode by remember { mutableStateOf(false) }
     var clientsInitialMonthFilter by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var clientsReturnScreen by remember { mutableStateOf(Screen.FOSTERING_MENU) }
+    var fosteringStatsInitialMonth by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     fun openWebView(url: String, title: String, returnTo: Screen) {
         webViewUrl = url
@@ -90,7 +91,7 @@ fun AppContent() {
             Screen.FOSTERING_MENU -> Screen.MAIN
             Screen.FOSTERING_CLIENTS -> { clientsInitialMonthFilter = null; clientsReturnScreen }
             Screen.FOSTERING_NOTES  -> Screen.FOSTERING_MENU
-            Screen.FOSTERING_STATS  -> Screen.FOSTERING_MENU
+            Screen.FOSTERING_STATS  -> { fosteringStatsInitialMonth = null; Screen.FOSTERING_MENU }
             Screen.BOARDING_ASSISTANT -> {
                 boardingInitialAction = null
                 boardingPresetDogName = ""
@@ -213,12 +214,14 @@ fun AppContent() {
         )
         Screen.FOSTERING_NOTES     -> NotesScreen(onBack = { screen = Screen.FOSTERING_MENU })
         Screen.FOSTERING_STATS     -> FosteringStatsScreen(
-            onBack = { screen = Screen.FOSTERING_MENU },
+            onBack = { fosteringStatsInitialMonth = null; screen = Screen.FOSTERING_MENU },
             onClientMonthClick = { m, y ->
+                fosteringStatsInitialMonth = m to y
                 clientsInitialMonthFilter = m to y
                 clientsReturnScreen = Screen.FOSTERING_STATS
                 screen = Screen.FOSTERING_CLIENTS
-            }
+            },
+            initialTimelineMonth = fosteringStatsInitialMonth
         )
         Screen.BOARDING_ASSISTANT  -> BoardingAssistantScreen(
             onBack = {
@@ -234,7 +237,10 @@ fun AppContent() {
                 clientsReturnScreen = Screen.BOARDING_ASSISTANT
                 screen = Screen.FOSTERING_CLIENTS
             },
-            onStatsClick = { screen = Screen.FOSTERING_STATS },
+            onStatsClick = { m, y ->
+                fosteringStatsInitialMonth = if (m != null && y != null) m to y else null
+                screen = Screen.FOSTERING_STATS
+            },
             initialFormAction = boardingInitialAction,
             presetDogName = boardingPresetDogName,
             presetClarification = boardingPresetClarification,
