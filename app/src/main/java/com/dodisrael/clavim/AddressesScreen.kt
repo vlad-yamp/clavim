@@ -36,6 +36,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Streetview
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -327,6 +329,20 @@ fun AddressesScreen(onBack: () -> Unit) {
                                     } catch (_: ActivityNotFoundException) {
                                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                                     }
+                                },
+                                onStreetView = {
+                                    val query = addr.hebrew
+                                    if (query.isNotBlank()) {
+                                        val uri = Uri.parse("https://maps.google.com/maps?q=${Uri.encode(query)}&layer=c")
+                                        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                                            setPackage("com.google.android.apps.maps")
+                                        }
+                                        try {
+                                            context.startActivity(intent)
+                                        } catch (_: ActivityNotFoundException) {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                                        }
+                                    }
                                 }
                             )
                         }
@@ -386,7 +402,8 @@ private fun AddressCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onCopy: () -> Unit,
-    onWaze: () -> Unit
+    onWaze: () -> Unit,
+    onStreetView: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -416,6 +433,11 @@ private fun AddressCard(
                 )
                 IconButton(onClick = onWaze, modifier = Modifier.size(28.dp)) {
                     Icon(Icons.Default.Navigation, contentDescription = "Waze", tint = Color(0xFF33CCFF), modifier = Modifier.size(17.dp))
+                }
+                if (entry.hebrew.isNotBlank()) {
+                    IconButton(onClick = onStreetView, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Place, contentDescription = "Street View", tint = Color(0xFFEA4335), modifier = Modifier.size(17.dp))
+                    }
                 }
                 IconButton(onClick = onCopy, modifier = Modifier.size(28.dp)) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF9E9E9E), modifier = Modifier.size(16.dp))
