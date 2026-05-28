@@ -87,7 +87,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -263,6 +262,8 @@ fun BoardingAssistantScreen(
     var bookingSuccess by remember { mutableStateOf(false) }
     var lastTableType by remember { mutableStateOf<TableType?>(null) }
     var wazeAddress by remember { mutableStateOf("") }
+    var isSendingTelegram by remember { mutableStateOf(false) }
+    var sendingTelegramLabel by remember { mutableStateOf("") }
     val pendingTtsBytes = remember { mutableStateOf<ByteArray?>(null) }
 
     val mediaPlayerHolder = remember { mutableStateOf<MediaPlayer?>(null) }
@@ -626,6 +627,23 @@ fun BoardingAssistantScreen(
         }
     }
 
+    if (isSendingTelegram) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(sendingTelegramLabel) },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(32.dp), color = Color(0xFF0D47A1))
+                    Text("Пожалуйста, подождите")
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
     existingDogDialogState?.let { (pending, initialPhotoUrl) ->
         ExistingDogFormDialog(
             pending = pending,
@@ -639,7 +657,9 @@ fun BoardingAssistantScreen(
                 val capturedApiKey = apiKey
 
                 if (fromMenu) {
-                    GlobalScope.launch(Dispatchers.IO) {
+                    sendingTelegramLabel = if (isDelete) "Удаление из передержки…" else "Запись на передержку…"
+                    isSendingTelegram = true
+                    scope.launch(Dispatchers.IO) {
                         try {
                             val csv = fetchCsv(CLIENTS_CSV_URL)
                             val candidates = findDogCandidates(csv, dogNameField)
@@ -666,11 +686,12 @@ fun BoardingAssistantScreen(
                         } catch (e: Exception) {
                             sendTelegramMessage("❌ Ошибка: ${e.message ?: "неизвестная"}")
                         }
+                        withContext(Dispatchers.Main) { isSendingTelegram = false; onBack() }
                     }
-                    Toast.makeText(context, "Запущено. Придёт сообщение в Telegram.", Toast.LENGTH_LONG).show()
-                    onBack()
                 } else {
-                    GlobalScope.launch(Dispatchers.IO) {
+                    sendingTelegramLabel = if (isDelete) "Удаление из передержки…" else "Запись на передержку…"
+                    isSendingTelegram = true
+                    scope.launch(Dispatchers.IO) {
                         try {
                             val csv = fetchCsv(CLIENTS_CSV_URL)
                             val candidates = findDogCandidates(csv, dogNameField)
@@ -697,8 +718,8 @@ fun BoardingAssistantScreen(
                         } catch (e: Exception) {
                             sendTelegramMessage("❌ Ошибка: ${e.message ?: "неизвестная"}")
                         }
+                        withContext(Dispatchers.Main) { isSendingTelegram = false }
                     }
-                    Toast.makeText(context, "Запущено. Придёт сообщение в Telegram.", Toast.LENGTH_LONG).show()
                 }
             },
             onDismiss = {
@@ -724,7 +745,9 @@ fun BoardingAssistantScreen(
                 val capturedApiKey = apiKey
 
                 if (fromMenu) {
-                    GlobalScope.launch(Dispatchers.IO) {
+                    sendingTelegramLabel = "Запись на передержку…"
+                    isSendingTelegram = true
+                    scope.launch(Dispatchers.IO) {
                         try {
                             val success = appendBookingToSheet(startD, endD, info, webUrl, "add")
                             sendTelegramMessage(
@@ -734,11 +757,12 @@ fun BoardingAssistantScreen(
                         } catch (e: Exception) {
                             sendTelegramMessage("❌ Ошибка: ${e.message ?: "неизвестная"}")
                         }
+                        withContext(Dispatchers.Main) { isSendingTelegram = false; onBack() }
                     }
-                    Toast.makeText(context, "Запущено. Придёт сообщение в Telegram.", Toast.LENGTH_LONG).show()
-                    onBack()
                 } else {
-                    GlobalScope.launch(Dispatchers.IO) {
+                    sendingTelegramLabel = "Запись на передержку…"
+                    isSendingTelegram = true
+                    scope.launch(Dispatchers.IO) {
                         try {
                             val success = appendBookingToSheet(startD, endD, info, webUrl, "add")
                             sendTelegramMessage(
@@ -748,8 +772,8 @@ fun BoardingAssistantScreen(
                         } catch (e: Exception) {
                             sendTelegramMessage("❌ Ошибка: ${e.message ?: "неизвестная"}")
                         }
+                        withContext(Dispatchers.Main) { isSendingTelegram = false }
                     }
-                    Toast.makeText(context, "Запущено. Придёт сообщение в Telegram.", Toast.LENGTH_LONG).show()
                 }
             },
             onDismiss = {
