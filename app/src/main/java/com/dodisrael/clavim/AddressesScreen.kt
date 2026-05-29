@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Directions
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -141,6 +142,25 @@ private suspend fun saveAddressesToServer(url: String, addresses: List<AddressEn
             json.optBoolean("ok", false)
         } catch (_: Exception) { false }
     }
+
+private fun openYandexNavigator(context: Context, destination: String) {
+    val trimmed = destination.trim()
+    val coordPattern = Regex("^\\s*(-?\\d+(?:\\.\\d+)?)\\s*[,; ]\\s*(-?\\d+(?:\\.\\d+)?)\\s*$")
+    val match = coordPattern.find(trimmed)
+    val url = if (match != null) {
+        "yandexnavi://build_route_on_map?lat_to=${match.groupValues[1]}&lon_to=${match.groupValues[2]}"
+    } else {
+        "yandexnavi://build_route_on_map?text=${Uri.encode(trimmed)}"
+    }
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+        setPackage("ru.yandex.yandexnavi")
+    }
+    try {
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "Яндекс Навигатор не установлен", Toast.LENGTH_SHORT).show()
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -330,6 +350,10 @@ fun AddressesScreen(onBack: () -> Unit) {
                                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                                     }
                                 },
+                                onYandex = {
+                                    val query = addr.hebrew.ifBlank { addr.russian }
+                                    openYandexNavigator(context, query)
+                                },
                                 onStreetView = {
                                     val query = addr.hebrew
                                     if (query.isNotBlank()) {
@@ -403,6 +427,7 @@ private fun AddressCard(
     onDelete: () -> Unit,
     onCopy: () -> Unit,
     onWaze: () -> Unit,
+    onYandex: () -> Unit,
     onStreetView: () -> Unit
 ) {
     Card(
@@ -431,14 +456,6 @@ private fun AddressCard(
                     color = Color(0xFF1C1B1F),
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = onWaze, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Default.Navigation, contentDescription = "Waze", tint = Color(0xFF33CCFF), modifier = Modifier.size(17.dp))
-                }
-                if (entry.hebrew.isNotBlank()) {
-                    IconButton(onClick = onStreetView, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Default.Place, contentDescription = "Street View", tint = Color(0xFFEA4335), modifier = Modifier.size(17.dp))
-                    }
-                }
                 IconButton(onClick = onCopy, modifier = Modifier.size(28.dp)) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF9E9E9E), modifier = Modifier.size(16.dp))
                 }
@@ -454,18 +471,31 @@ private fun AddressCard(
                 Text(
                     entry.hebrew,
                     fontSize = 14.sp,
-                    color = Color(0xFF1C1B1F),
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.fillMaxWidth()
+                    color = Color(0xFF1C1B1F)
                 )
             }
-            if (entry.russian.isNotBlank()) {
-                Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(2.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
                     entry.russian,
                     fontSize = 13.sp,
-                    color = Color(0xFF757575)
+                    color = Color(0xFF757575),
+                    modifier = Modifier.weight(1f)
                 )
+                IconButton(onClick = onWaze, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Navigation, contentDescription = "Waze", tint = Color(0xFF33CCFF), modifier = Modifier.size(17.dp))
+                }
+                if (entry.hebrew.isNotBlank()) {
+                    IconButton(onClick = onYandex, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Directions, contentDescription = "Яндекс Навигатор", tint = Color(0xFFFC3F1D), modifier = Modifier.size(17.dp))
+                    }
+                    IconButton(onClick = onStreetView, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Place, contentDescription = "Street View", tint = Color(0xFFEA4335), modifier = Modifier.size(17.dp))
+                    }
+                }
             }
         }
     }
