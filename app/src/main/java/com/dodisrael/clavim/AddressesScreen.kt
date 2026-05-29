@@ -143,6 +143,75 @@ private suspend fun saveAddressesToServer(url: String, addresses: List<AddressEn
         } catch (_: Exception) { false }
     }
 
+private val GROUP_COLOR_PALETTE = listOf(
+    Color(0xFFE3F2FD), Color(0xFFE8F5E9), Color(0xFFFFF3E0), Color(0xFFFCE4EC),
+    Color(0xFFF3E5F5), Color(0xFFE0F7FA), Color(0xFFF1F8E9), Color(0xFFECEFF1),
+    Color(0xFFFFF9C4), Color(0xFFEDE7F6)
+)
+
+// name → Pair(colorIndex, groupName)
+private fun loadCachedData(
+    prefs: android.content.SharedPreferences,
+    names: List<String>
+): Pair<Map<String, Color>, Map<String, String>> {
+    val cacheKey = names.sorted().joinToString("|")
+    if (prefs.getString("address_color_cache_key", "") != cacheKey) return Pair(emptyMap(), emptyMap())
+    return try {
+        val obj = JSONObject(prefs.getString("address_color_cache", "") ?: return Pair(emptyMap(), emptyMap()))
+        val colors = buildMap<String, Color> {
+            for (k in obj.keys()) put(k, GROUP_COLOR_PALETTE[obj.getJSONObject(k).getInt("i") % GROUP_COLOR_PALETTE.size])
+        }
+        val groups = buildMap<String, String> {
+            for (k in obj.keys()) put(k, obj.getJSONObject(k).getString("g"))
+        }
+        Pair(colors, groups)
+    } catch (_: Exception) { Pair(emptyMap(), emptyMap()) }
+}
+
+// name → Pair(colorIndex, groupName)
+private suspend fun classifyAddressesWithGpt(
+    names: List<String>,
+    apiKey: String
+): Map<String, Pair<Int, String>> = withContext(Dispatchers.IO) {
+    val prompt = "Перед тобой список названий адресов из приложения для выгула и дрессировки собак.\n" +
+        "Сгруппируй их по смыслу. Названия групп должны быть на русском языке.\n" +
+        "Верни ТОЛЬКО валидный JSON, без пояснений:\n" +
+        "{\"groups\":[{\"name\":\"название группы\",\"items\":[\"name1\",\"name2\"]}]}\n\n" +
+        "Названия:\n" + names.joinToString("\n") { "- $it" }
+
+    val requestBody = JSONObject().apply {
+        put("model", "gpt-4o-mini")
+        put("messages", JSONArray().apply {
+            put(JSONObject().apply { put("role", "user"); put("content", prompt) })
+        })
+        put("temperature", 0.2)
+    }.toString().toByteArray(Charsets.UTF_8)
+
+    val conn = URL("https://api.openai.com/v1/chat/completions").openConnection() as HttpURLConnection
+    conn.requestMethod = "POST"
+    conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+    conn.setRequestProperty("Authorization", "Bearer $apiKey")
+    conn.doOutput = true
+    conn.connectTimeout = 30_000
+    conn.readTimeout = 30_000
+    conn.outputStream.use { it.write(requestBody) }
+
+    val content = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).readText())
+        .getJSONArray("choices").getJSONObject(0)
+        .getJSONObject("message").getString("content")
+        .trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+
+    val groups = JSONObject(content).getJSONArray("groups")
+    buildMap {
+        for (i in 0 until groups.length()) {
+            val group = groups.getJSONObject(i)
+            val groupName = group.getString("name")
+            val items = group.getJSONArray("items")
+            for (j in 0 until items.length()) put(items.getString(j), Pair(i, groupName))
+        }
+    }
+}
+
 private fun openYandexNavigator(context: Context, destination: String) {
     val trimmed = destination.trim()
     val coordPattern = Regex("^\\s*(-?\\d+(?:\\.\\d+)?)\\s*[,; ]\\s*(-?\\d+(?:\\.\\d+)?)\\s*$")
@@ -169,8 +238,13 @@ fun AddressesScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("clavim_prefs", Context.MODE_PRIVATE) }
     val scriptUrl = remember { prefs.getString("addresses_script_url", "") ?: "" }
+    val openAiKey = remember { prefs.getString("openai_api_key", "") ?: "" }
 
-    var addresses by remember { mutableStateOf(loadAddresses(prefs)) }
+    val initialAddresses = remember { loadAddresses(prefs) }
+    var addresses by remember { mutableStateOf(initialAddresses) }
+    val initialCache = remember { loadCachedData(prefs, initialAddresses.map { it.name }) }
+    var addressColors by remember { mutableStateOf(initialCache.first) }
+    var addressGroupNames by remember { mutableStateOf(initialCache.second) }
     var editingIndex by remember { mutableStateOf<Int?>(null) }
     var deletingIndex by remember { mutableStateOf<Int?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
@@ -200,6 +274,29 @@ fun AddressesScreen(onBack: () -> Unit) {
                 val loaded = fetchAddressesFromServer(scriptUrl)
                 addresses = loaded
                 saveAddresses(prefs, loaded)
+                if (openAiKey.isNotBlank()) {
+                    val names = loaded.map { it.name }
+                    val cacheKey = "v3|" + names.sorted().joinToString("|")
+                    val cached = if (prefs.getString("address_color_cache_key", "") == cacheKey)
+                        loadCachedData(prefs, names) else Pair(emptyMap(), emptyMap())
+                    if (cached.first.isNotEmpty()) {
+                        addressColors = cached.first
+                        addressGroupNames = cached.second
+                    } else {
+                        val grouping = classifyAddressesWithGpt(names, openAiKey)
+                        addressColors = grouping.mapValues { (_, p) -> GROUP_COLOR_PALETTE[p.first % GROUP_COLOR_PALETTE.size] }
+                        addressGroupNames = grouping.mapValues { (_, p) -> p.second }
+                        val cacheJson = JSONObject().apply {
+                            grouping.forEach { (k, p) ->
+                                put(k, JSONObject().apply { put("i", p.first); put("g", p.second) })
+                            }
+                        }
+                        prefs.edit()
+                            .putString("address_color_cache_key", cacheKey)
+                            .putString("address_color_cache", cacheJson.toString())
+                            .apply()
+                    }
+                }
             } catch (e: Exception) {
                 syncError = "Ошибка загрузки: ${e.message}"
             }
@@ -328,6 +425,8 @@ fun AddressesScreen(onBack: () -> Unit) {
                         ReorderableItem(reorderState, key = addr.name + addr.hebrew) { isDragging ->
                             AddressCard(
                                 entry = addr,
+                                cardColor = addressColors[addr.name] ?: Color.White,
+                                groupName = addressGroupNames[addr.name] ?: "",
                                 isDragging = isDragging,
                                 dragHandleModifier = Modifier.longPressDraggableHandle(),
                                 onEdit = { editingIndex = idx },
@@ -421,6 +520,8 @@ fun AddressesScreen(onBack: () -> Unit) {
 @Composable
 private fun AddressCard(
     entry: AddressEntry,
+    cardColor: Color,
+    groupName: String,
     isDragging: Boolean,
     dragHandleModifier: Modifier,
     onEdit: () -> Unit,
@@ -433,8 +534,8 @@ private fun AddressCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(if (isDragging) 8.dp else 2.dp)
+        elevation = CardDefaults.cardElevation(if (isDragging) 8.dp else 2.dp),
+        colors = CardDefaults.cardColors(containerColor = cardColor)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -456,6 +557,25 @@ private fun AddressCard(
                     color = Color(0xFF1C1B1F),
                     modifier = Modifier.weight(1f)
                 )
+                if (groupName.isNotBlank()) {
+                    Text(
+                        groupName,
+                        fontSize = 11.sp,
+                        color = Color(0xFF9E9E9E)
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    entry.hebrew,
+                    fontSize = 14.sp,
+                    color = Color(0xFF1C1B1F),
+                    modifier = Modifier.weight(1f)
+                )
                 IconButton(onClick = onCopy, modifier = Modifier.size(28.dp)) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF9E9E9E), modifier = Modifier.size(16.dp))
                 }
@@ -465,14 +585,6 @@ private fun AddressCard(
                 IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
                     Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFB00020), modifier = Modifier.size(16.dp))
                 }
-            }
-            if (entry.hebrew.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    entry.hebrew,
-                    fontSize = 14.sp,
-                    color = Color(0xFF1C1B1F)
-                )
             }
             Spacer(Modifier.height(2.dp))
             Row(
